@@ -13,6 +13,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/johanviberg/zd/internal/browser"
+	"github.com/johanviberg/zd/internal/permissions"
 	"github.com/johanviberg/zd/internal/types"
 	"github.com/johanviberg/zd/pkg/zendesk"
 )
@@ -48,6 +49,7 @@ type App struct {
 	users       zendesk.UserService
 	subdomain   string
 	currentUser *types.User
+	perms       permissions.Permissions
 	state       viewState
 	prevState   viewState // saved state when entering detail from kanban
 	list        listModel
@@ -72,6 +74,7 @@ func NewApp(tickets zendesk.TicketService, search zendesk.SearchService, users z
 		users:      users,
 		subdomain:  subdomain,
 		version:    version,
+		perms:      permissions.FromUser(nil),
 		state:      listView,
 		showDetail: false,
 		focus:      focusList,
@@ -277,7 +280,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// ctrl+p: command palette
 			if key.Matches(msg, keys.CommandPalette) {
 				hasItems := len(m.list.items) > 0
-				cmd := m.cmdPalette.open(m.state, m.focus, m.showDetail, m.list.hasMore, hasItems)
+				cmd := m.cmdPalette.open(m.state, m.focus, m.showDetail, m.list.hasMore, hasItems, m.perms)
 				return m, cmd
 			}
 
@@ -386,6 +389,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case currentUserMsg:
 		m.currentUser = msg.user
+		m.perms = permissions.FromUser(msg.user)
 		return m, nil
 
 	case ticketLoadedMsg:
@@ -607,9 +611,12 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return m, cmd
 				case key.Matches(msg, keys.Comment):
 					var cmd tea.Cmd
-					m.actions, cmd = m.actions.openComment(t.ID)
+					m.actions, cmd = m.actions.openComment(t.ID, m.perms)
 					return m, cmd
 				case key.Matches(msg, keys.Status):
+					if !m.perms.CanChangeStatus {
+						return m, nil
+					}
 					m.actions = m.actions.openStatus(t.ID, t.Status)
 					return m, nil
 				case key.Matches(msg, keys.Priority):
@@ -713,10 +720,13 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if len(m.list.items) > 0 {
 					t := m.list.items[m.list.cursor]
 					var cmd tea.Cmd
-					m.actions, cmd = m.actions.openComment(t.ID)
+					m.actions, cmd = m.actions.openComment(t.ID, m.perms)
 					return m, cmd
 				}
 			case key.Matches(msg, keys.Status):
+				if !m.perms.CanChangeStatus {
+					return m, nil
+				}
 				if len(m.list.items) > 0 {
 					t := m.list.items[m.list.cursor]
 					m.actions = m.actions.openStatus(t.ID, t.Status)
@@ -752,9 +762,12 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch {
 				case key.Matches(msg, keys.Comment):
 					var cmd tea.Cmd
-					m.actions, cmd = m.actions.openComment(m.detail.ticket.ID)
+					m.actions, cmd = m.actions.openComment(m.detail.ticket.ID, m.perms)
 					return m, cmd
 				case key.Matches(msg, keys.Status):
+					if !m.perms.CanChangeStatus {
+						return m, nil
+					}
 					m.actions = m.actions.openStatus(m.detail.ticket.ID, m.detail.ticket.Status)
 					return m, nil
 				case key.Matches(msg, keys.Priority):
@@ -777,9 +790,12 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				switch {
 				case key.Matches(msg, keys.Comment):
 					var cmd tea.Cmd
-					m.actions, cmd = m.actions.openComment(t.ID)
+					m.actions, cmd = m.actions.openComment(t.ID, m.perms)
 					return m, cmd
 				case key.Matches(msg, keys.Status):
+					if !m.perms.CanChangeStatus {
+						return m, nil
+					}
 					m.actions = m.actions.openStatus(t.ID, t.Status)
 					return m, nil
 				case key.Matches(msg, keys.Priority):
@@ -956,7 +972,7 @@ func (m *App) handlePaletteAction(action string) (tea.Model, tea.Cmd) {
 		}
 		if id > 0 {
 			var cmd tea.Cmd
-			m.actions, cmd = m.actions.openComment(id)
+			m.actions, cmd = m.actions.openComment(id, m.perms)
 			return m, cmd
 		}
 	case "status":

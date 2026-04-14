@@ -14,9 +14,9 @@ func TestStoreGenerates100Tickets(t *testing.T) {
 	assert.Len(t, s.Tickets, 100)
 }
 
-func TestStoreGenerates10Users(t *testing.T) {
+func TestStoreGenerates12Users(t *testing.T) {
 	s := NewStore()
-	assert.Len(t, s.Users, 10)
+	assert.Len(t, s.Users, 12)
 }
 
 func TestStoreDeterministic(t *testing.T) {

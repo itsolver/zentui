@@ -9,12 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Role-based feature gating — `zd` now detects the authenticated user's Zendesk role (admin, agent, light agent) via `/api/v2/users/me` and proactively hides or blocks features the user cannot use
+- Light agent restrictions enforced across CLI, TUI, and MCP server: public comments, status changes, ticket assignment, CCs, and ticket deletion are blocked with clear error messages
+- TUI comment panel shows "Internal note only (light agent)" and hides the public/internal toggle and CC picker for light agents
+- TUI command palette and status key binding are hidden for light agents
+- MCP server validates operations against user permissions at tool invocation time, returning descriptive errors instead of letting Zendesk reject them
+- CLI commands (`tickets update`, `tickets create`, `tickets delete`) gate restricted flags early with actionable error messages
+- `--demo-role` flag for testing role-based behavior without authentication (`--demo --demo-role light_agent`)
 - Public OAuth client support — `--client-secret` is no longer required when using a Zendesk public OAuth client (secured via PKCE, which was already implemented)
 - OAuth refresh token support — access tokens auto-refresh transparently in the HTTP transport layer when a refresh token is available
 - `auth status` now shows token expiry time, validity status, and whether auto-refresh is enabled
 
 ### Changed
 
+- `User` type now includes `role_type`, `restricted_agent`, and `custom_role_id` fields from the Zendesk API
+- Light agents' comments default to internal notes (CLI silently overrides `--public` default; MCP server sets `public: false`)
 - OAuth login flow returns structured `OAuthResult` (access token, refresh token, expiry) instead of a bare token string
 - Simplified agent onboarding — after an admin configures `subdomain` and `oauth_client_id` once, agents authenticate with just `zd auth login`
 

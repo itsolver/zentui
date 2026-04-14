@@ -3,6 +3,8 @@ package cmd
 import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
+
+	"github.com/johanviberg/zd/internal/permissions"
 )
 
 func init() {
@@ -36,12 +38,22 @@ var mcpServeCmd = &cobra.Command{
 			return err
 		}
 
+		// Fetch user permissions (fail-open if unavailable)
+		var perms permissions.Permissions
+		userSvc, userErr := newUserService(cmd)
+		if userErr == nil {
+			user, _ := userSvc.GetMe(cmd.Context())
+			perms = permissions.FromUser(user)
+		} else {
+			perms = permissions.FromUser(nil)
+		}
+
 		server := mcp.NewServer(&mcp.Implementation{
 			Name:    "zd",
 			Version: buildVersion,
 		}, nil)
 
-		registerTicketTools(server, ticketSvc)
+		registerTicketTools(server, ticketSvc, perms)
 		registerSearchTools(server, searchSvc)
 		registerArticleTools(server, articleSvc)
 

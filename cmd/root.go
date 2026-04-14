@@ -11,14 +11,16 @@ import (
 	"github.com/johanviberg/zd/internal/config"
 	"github.com/johanviberg/zd/internal/demo"
 	"github.com/johanviberg/zd/internal/output"
+	"github.com/johanviberg/zd/internal/permissions"
 )
 
 type contextKey string
 
 const (
-	ctxKeyConfig    contextKey = "config"
-	ctxKeyFormatter contextKey = "formatter"
-	ctxKeyDemoStore contextKey = "demoStore"
+	ctxKeyConfig      contextKey = "config"
+	ctxKeyFormatter   contextKey = "formatter"
+	ctxKeyDemoStore   contextKey = "demoStore"
+	ctxKeyPermissions contextKey = "permissions"
 )
 
 var rootCmd = &cobra.Command{
@@ -59,7 +61,10 @@ var rootCmd = &cobra.Command{
 		ctx = context.WithValue(ctx, ctxKeyConfig, cfg)
 		ctx = context.WithValue(ctx, ctxKeyFormatter, formatter)
 		if demoMode {
-			ctx = context.WithValue(ctx, ctxKeyDemoStore, demo.NewStore())
+			store := demo.NewStore()
+			demoRole, _ := cmd.Flags().GetString("demo-role")
+			store.DemoRole = demoRole
+			ctx = context.WithValue(ctx, ctxKeyDemoStore, store)
 		}
 		cmd.SetContext(ctx)
 		return nil
@@ -87,6 +92,7 @@ func init() {
 	rootCmd.PersistentFlags().String("subdomain", "", "Override Zendesk subdomain")
 	rootCmd.PersistentFlags().String("profile", "default", "Config profile")
 	rootCmd.PersistentFlags().Bool("demo", false, "Use synthetic demo data (no auth required)")
+	rootCmd.PersistentFlags().String("demo-role", "", "Demo mode role: agent, light_agent, admin")
 }
 
 func isNonInteractive(cmd *cobra.Command) bool {
@@ -114,6 +120,14 @@ func formatterFromCtx(ctx context.Context) output.Formatter {
 	v, ok := ctx.Value(ctxKeyFormatter).(output.Formatter)
 	if !ok || v == nil {
 		panic("formatterFromCtx called before PersistentPreRunE — this is a bug")
+	}
+	return v
+}
+
+func permissionsFromCtx(ctx context.Context) permissions.Permissions {
+	v, ok := ctx.Value(ctxKeyPermissions).(permissions.Permissions)
+	if !ok {
+		return permissions.FromUser(nil)
 	}
 	return v
 }

@@ -8,6 +8,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/johanviberg/zd/internal/nlq"
+	"github.com/johanviberg/zd/internal/permissions"
 	"github.com/johanviberg/zd/internal/types"
 	"github.com/johanviberg/zd/pkg/zendesk"
 )
@@ -125,7 +126,7 @@ func convertCustomFields(inputs []CustomFieldInput) []types.CustomField {
 
 // --- Registration ---
 
-func registerTicketTools(server *mcp.Server, svc zendesk.TicketService) {
+func registerTicketTools(server *mcp.Server, svc zendesk.TicketService, perms permissions.Permissions) {
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "zendesk_list_tickets",
 		Description: "List Zendesk tickets sorted by update time (newest first). " +
@@ -214,6 +215,12 @@ func registerTicketTools(server *mcp.Server, svc zendesk.TicketService) {
 		if args.Comment == "" {
 			return errorResult(types.NewArgError("comment is required")), nil, nil
 		}
+		if args.AssigneeID != 0 && !perms.CanAssignTickets {
+			return errorResult(types.NewArgError("light agents cannot assign tickets")), nil, nil
+		}
+		if args.Status != "" && !perms.CanChangeStatus {
+			return errorResult(types.NewArgError("light agents cannot set ticket status")), nil, nil
+		}
 
 		ticket, err := svc.Create(ctx, &types.CreateTicketRequest{
 			Subject:        args.Subject,
@@ -243,6 +250,18 @@ func registerTicketTools(server *mcp.Server, svc zendesk.TicketService) {
 		if args.ID == 0 {
 			return errorResult(types.NewArgError("ticket id is required")), nil, nil
 		}
+		if args.Status != "" && !perms.CanChangeStatus {
+			return errorResult(types.NewArgError("light agents cannot change ticket status")), nil, nil
+		}
+		if args.AssigneeID != nil && !perms.CanAssignTickets {
+			return errorResult(types.NewArgError("light agents cannot assign tickets")), nil, nil
+		}
+		if args.Comment != "" && args.Public != nil && *args.Public && !perms.CanPublicComment {
+			return errorResult(types.NewArgError("light agents cannot post public comments")), nil, nil
+		}
+		if len(args.CC) > 0 && !perms.CanAddCC {
+			return errorResult(types.NewArgError("light agents cannot add CCs")), nil, nil
+		}
 
 		updateReq := &types.UpdateTicketRequest{
 			Subject:      args.Subject,
@@ -261,6 +280,8 @@ func registerTicketTools(server *mcp.Server, svc zendesk.TicketService) {
 			public := true
 			if args.Public != nil {
 				public = *args.Public
+			} else if !perms.CanPublicComment {
+				public = false
 			}
 			updateReq.Comment = &types.Comment{
 				Body:   args.Comment,
@@ -287,6 +308,9 @@ func registerTicketTools(server *mcp.Server, svc zendesk.TicketService) {
 	}, func(ctx context.Context, req *mcp.CallToolRequest, args DeleteTicketInput) (*mcp.CallToolResult, any, error) {
 		if args.ID == 0 {
 			return errorResult(types.NewArgError("ticket id is required")), nil, nil
+		}
+		if !perms.CanDeleteTickets {
+			return errorResult(types.NewArgError("light agents cannot delete tickets")), nil, nil
 		}
 
 		if err := svc.Delete(ctx, args.ID); err != nil {

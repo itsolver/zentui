@@ -34,6 +34,11 @@ var ticketsDeleteCmd = &cobra.Command{
 			return fmt.Errorf("invalid ticket ID: %s", args[0])
 		}
 
+		perms := ensurePermissions(cmd)
+		if !perms.CanDeleteTickets {
+			return fmt.Errorf("light agents cannot delete tickets")
+		}
+
 		svc, err := newTicketService(cmd)
 		if err != nil {
 			return err

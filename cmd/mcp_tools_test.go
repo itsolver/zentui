@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/johanviberg/zd/internal/permissions"
 	"github.com/johanviberg/zd/internal/types"
 )
 
@@ -145,7 +146,7 @@ func setupMCPServer(t *testing.T, ticketSvc *mockTicketService, searchSvc *mockS
 	}, nil)
 
 	if ticketSvc != nil {
-		registerTicketTools(server, ticketSvc)
+		registerTicketTools(server, ticketSvc, permissions.FromUser(nil))
 	}
 	if searchSvc != nil {
 		registerSearchTools(server, searchSvc)

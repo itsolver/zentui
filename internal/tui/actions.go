@@ -10,6 +10,7 @@ import (
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/johanviberg/zd/internal/permissions"
 
 	"github.com/johanviberg/zd/internal/types"
 	"github.com/johanviberg/zd/pkg/zendesk"
@@ -39,6 +40,7 @@ type actionsModel struct {
 	mode       actionMode
 	textarea   textarea.Model
 	isPublic   bool
+	perms      permissions.Permissions
 	statusIdx  int
 	prioIdx    int
 	submitting bool
@@ -70,10 +72,11 @@ func newActionsModel(tickets zendesk.TicketService, users zendesk.UserService) a
 	}
 }
 
-func (m actionsModel) openComment(ticketID int64) (actionsModel, tea.Cmd) {
+func (m actionsModel) openComment(ticketID int64, perms permissions.Permissions) (actionsModel, tea.Cmd) {
 	m.ticketID = ticketID
 	m.mode = actionComment
-	m.isPublic = true
+	m.perms = perms
+	m.isPublic = perms.CanPublicComment
 	m.err = nil
 	m.ccFocused = false
 	m.ccPicker = m.ccPicker.reset()
@@ -243,6 +246,9 @@ func (m actionsModel) Update(msg tea.Msg) (actionsModel, tea.Cmd) {
 					return m, tea.Batch(m.spinner.Tick, m.submitComment())
 				}
 			case key.Matches(msg, keys.Tab):
+				if !m.perms.CanPublicComment {
+					return m, nil
+				}
 				m.isPublic = !m.isPublic
 				if !m.isPublic {
 					m.ccPicker = m.ccPicker.deactivate()
@@ -251,6 +257,9 @@ func (m actionsModel) Update(msg tea.Msg) (actionsModel, tea.Cmd) {
 				}
 				return m, nil
 			case key.Matches(msg, keys.AddCC):
+				if !m.perms.CanAddCC {
+					return m, nil
+				}
 				if m.isPublic {
 					m.ccFocused = true
 					m.textarea.Blur()
@@ -324,9 +333,13 @@ func (m actionsModel) View() string {
 func (m actionsModel) viewComment() string {
 	title := titleStyle.Render("Add Comment")
 
-	publicToggle := "[ ] Public reply   [x] Internal note"
-	if m.isPublic {
+	var publicToggle string
+	if !m.perms.CanPublicComment {
+		publicToggle = "[x] Internal note only (light agent)"
+	} else if m.isPublic {
 		publicToggle = "[x] Public reply   [ ] Internal note"
+	} else {
+		publicToggle = "[ ] Public reply   [x] Internal note"
 	}
 
 	var statusLine string
@@ -336,7 +349,12 @@ func (m actionsModel) viewComment() string {
 		statusLine = errorStyle.Render("Error: " + m.err.Error())
 	}
 
-	help := dimStyle.Render("ctrl+s submit   esc cancel   tab toggle public/internal   ctrl+a add CC")
+	var help string
+	if !m.perms.CanPublicComment {
+		help = dimStyle.Render("ctrl+s submit   esc cancel")
+	} else {
+		help = dimStyle.Render("ctrl+s submit   esc cancel   tab toggle public/internal   ctrl+a add CC")
+	}
 
 	width := m.width - 8
 	if width < 40 {

@@ -206,6 +206,18 @@ zd tickets show 42 --demo
 
 Works with `tickets list`, `tickets show`, `tickets search`, `tickets comments`, and `tui`.
 
+Use `--demo-role` to simulate different Zendesk roles:
+
+```bash
+# Experience the TUI as a light agent (internal notes only, no status changes)
+zd tui --demo --demo-role light_agent
+
+# Test admin behavior
+zd tickets delete 1 --demo --demo-role admin --yes
+```
+
+Valid roles: `agent` (default), `light_agent`, `admin`.
+
 ## Interactive TUI
 
 `zd` includes an optional interactive terminal UI for browsing and managing tickets. Launch it with:
@@ -236,6 +248,28 @@ The TUI provides:
 - **Navigation** — `esc` to go back, `q` to quit
 
 The TUI uses the same authentication and service layer as the CLI commands — no additional setup required.
+
+## Role-based permissions
+
+`zd` detects the authenticated user's Zendesk role and automatically adapts the available features. This applies across CLI commands, the TUI, and the MCP server.
+
+| Capability | Admin | Agent | Light Agent |
+|---|---|---|---|
+| List / show / search tickets | Yes | Yes | Yes |
+| Post public comments | Yes | Yes | No (internal only) |
+| Change ticket status | Yes | Yes | No |
+| Assign tickets | Yes | Yes | No |
+| Add CCs to comments | Yes | Yes | No |
+| Delete tickets | Yes | Yes | No |
+| Change priority | Yes | Yes | Yes |
+
+Light agents are identified by the `role_type` field (value `1`) or the `restricted_agent` flag from the Zendesk API. When a light agent is detected:
+
+- **CLI** — restricted flags (`--public`, `--status`, `--assignee-id`, `--cc`) return a clear error. Comments default to internal notes.
+- **TUI** — the public/internal toggle and CC picker are hidden. The status key binding (`s`) is disabled. The command palette hides unavailable actions.
+- **MCP server** — tool calls with restricted parameters return descriptive error messages instead of passing through to the Zendesk API.
+
+If the user's role cannot be determined (e.g. network error), `zd` assumes full permissions. The Zendesk API enforces restrictions server-side regardless.
 
 ## Output formats
 
@@ -397,6 +431,7 @@ This returns a schema with property types, required fields, and defaults that an
 | `--subdomain` | Override Zendesk subdomain |
 | `--profile` | Config profile (default: `default`) |
 | `--demo` | Use synthetic demo data (no auth required) |
+| `--demo-role` | Demo mode role: `agent`, `light_agent`, `admin` |
 | `--trace-id` | Trace ID attached to API requests |
 
 ## Configuration

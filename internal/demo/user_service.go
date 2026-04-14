@@ -19,13 +19,28 @@ func (s *UserService) GetMe(ctx context.Context) (*types.User, error) {
 	s.store.mu.RLock()
 	defer s.store.mu.RUnlock()
 
+	role := s.store.DemoRole
 	for i := range s.store.Users {
-		if s.store.Users[i].Role == "agent" {
-			u := s.store.Users[i]
-			return &u, nil
+		u := &s.store.Users[i]
+		switch role {
+		case "light_agent":
+			if u.RestrictedAgent {
+				copy := *u
+				return &copy, nil
+			}
+		case "admin":
+			if u.Role == "admin" {
+				copy := *u
+				return &copy, nil
+			}
+		default:
+			if u.Role == "agent" && !u.RestrictedAgent {
+				copy := *u
+				return &copy, nil
+			}
 		}
 	}
-	return nil, types.NewNotFoundError("no agent user found")
+	return nil, types.NewNotFoundError("no matching user found")
 }
 
 func (s *UserService) AutocompleteUsers(ctx context.Context, name string) ([]types.User, error) {

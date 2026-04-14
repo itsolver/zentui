@@ -65,6 +65,14 @@ var ticketsCreateCmd = &cobra.Command{
 			return fmt.Errorf("comment is required (use --comment or --editor)")
 		}
 
+		perms := ensurePermissions(cmd)
+		if cmd.Flags().Changed("assignee-id") && !perms.CanAssignTickets {
+			return fmt.Errorf("light agents cannot assign tickets")
+		}
+		if cmd.Flags().Changed("status") && !perms.CanChangeStatus {
+			return fmt.Errorf("light agents cannot set ticket status")
+		}
+
 		priority, _ := cmd.Flags().GetString("priority")
 		ticketType, _ := cmd.Flags().GetString("type")
 		status, _ := cmd.Flags().GetString("status")

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"github.com/johanviberg/zd/internal/auth"
 	"github.com/johanviberg/zd/internal/browser"
 	"github.com/johanviberg/zd/internal/demo"
+	"github.com/johanviberg/zd/internal/permissions"
 	"github.com/johanviberg/zd/internal/types"
 	"github.com/johanviberg/zd/pkg/zendesk"
 )
@@ -80,6 +82,27 @@ func newUserService(cmd *cobra.Command) (zendesk.UserService, error) {
 		return nil, err
 	}
 	return api.NewUserService(client), nil
+}
+
+func ensurePermissions(cmd *cobra.Command) permissions.Permissions {
+	ctx := cmd.Context()
+	if p, ok := ctx.Value(ctxKeyPermissions).(permissions.Permissions); ok {
+		return p
+	}
+
+	userSvc, err := newUserService(cmd)
+	if err != nil {
+		return permissions.FromUser(nil)
+	}
+
+	user, err := userSvc.GetMe(ctx)
+	if err != nil {
+		return permissions.FromUser(nil)
+	}
+
+	perms := permissions.FromUser(user)
+	cmd.SetContext(context.WithValue(ctx, ctxKeyPermissions, perms))
+	return perms
 }
 
 func resolveSubdomain(cmd *cobra.Command) string {

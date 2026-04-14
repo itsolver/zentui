@@ -7,6 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/johanviberg/zd/internal/permissions"
 	"github.com/sahilm/fuzzy"
 )
 
@@ -46,7 +47,7 @@ func newCmdPaletteModel() cmdPaletteModel {
 	return cmdPaletteModel{input: ti}
 }
 
-func (m *cmdPaletteModel) open(state viewState, focus panelFocus, showDetail bool, hasMore bool, hasItems bool) tea.Cmd {
+func (m *cmdPaletteModel) open(state viewState, focus panelFocus, showDetail bool, hasMore bool, hasItems bool, perms permissions.Permissions) tea.Cmd {
 	m.active = true
 	m.input.Reset()
 	m.input.SetValue("")
@@ -67,7 +68,9 @@ func (m *cmdPaletteModel) open(state viewState, focus panelFocus, showDetail boo
 	// Ticket Actions
 	if hasItems || state == detailView {
 		items = append(items, cmdItem{"Add comment", "c", "Ticket Actions", "comment"})
-		items = append(items, cmdItem{"Change status", "s", "Ticket Actions", "status"})
+		if perms.CanChangeStatus {
+			items = append(items, cmdItem{"Change status", "s", "Ticket Actions", "status"})
+		}
 		items = append(items, cmdItem{"Change priority", "p", "Ticket Actions", "priority"})
 	}
 

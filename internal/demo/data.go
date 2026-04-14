@@ -16,6 +16,7 @@ type Store struct {
 	Audits   map[int64][]types.Audit
 	Users    []types.User
 	nextID   int64
+	DemoRole string // "", "agent", "light_agent", "admin"
 }
 
 func NewStore() *Store {
@@ -36,12 +37,16 @@ func (s *Store) nextIDLocked() int64 {
 	return s.nextID
 }
 
+func intPtr(v int) *int { return &v }
+
 func (s *Store) generateUsers() {
 	s.Users = []types.User{
 		{ID: 1001, Name: "Sarah Chen", Email: "sarah.chen@example.com", Role: "agent", Active: true},
 		{ID: 1002, Name: "Emma Johansson", Email: "emma.johansson@example.com", Role: "agent", Active: true},
 		{ID: 1003, Name: "James O'Brien", Email: "james.obrien@example.com", Role: "agent", Active: true},
 		{ID: 1004, Name: "Priya Patel", Email: "priya.patel@example.com", Role: "agent", Active: true},
+		{ID: 1005, Name: "Alex Light", Email: "alex.light@example.com", Role: "agent", RoleType: intPtr(1), RestrictedAgent: true, Active: true},
+		{ID: 1006, Name: "Admin User", Email: "admin@example.com", Role: "admin", RoleType: intPtr(4), Active: true},
 		{ID: 2001, Name: "Marcus Rivera", Email: "marcus.rivera@customer.com", Role: "end-user", Active: true},
 		{ID: 2002, Name: "Lisa Tanaka", Email: "lisa.tanaka@customer.com", Role: "end-user", Active: true},
 		{ID: 2003, Name: "David Kim", Email: "david.kim@customer.com", Role: "end-user", Active: true},

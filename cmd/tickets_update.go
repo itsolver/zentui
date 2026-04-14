@@ -53,6 +53,17 @@ var ticketsUpdateCmd = &cobra.Command{
 			return fmt.Errorf("invalid ticket ID: %s", args[0])
 		}
 
+		perms := ensurePermissions(cmd)
+		if cmd.Flags().Changed("status") && !perms.CanChangeStatus {
+			return fmt.Errorf("light agents cannot change ticket status")
+		}
+		if cmd.Flags().Changed("assignee-id") && !perms.CanAssignTickets {
+			return fmt.Errorf("light agents cannot assign tickets")
+		}
+		if cmd.Flags().Changed("cc") && !perms.CanAddCC {
+			return fmt.Errorf("light agents cannot add CCs")
+		}
+
 		svc, err := newTicketService(cmd)
 		if err != nil {
 			return err
@@ -128,6 +139,17 @@ var ticketsUpdateCmd = &cobra.Command{
 					Body:   body,
 					Public: &public,
 				}
+			}
+		}
+
+		if req.Comment != nil && !perms.CanPublicComment {
+			if cmd.Flags().Changed("public") {
+				if req.Comment.Public != nil && *req.Comment.Public {
+					return fmt.Errorf("light agents cannot post public comments (use --public=false for internal notes)")
+				}
+			} else {
+				f := false
+				req.Comment.Public = &f
 			}
 		}
 
