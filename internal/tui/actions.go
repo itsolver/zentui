@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"charm.land/bubbles/v2/key"
@@ -11,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/itsolver/zentui/internal/permissions"
+	"github.com/itsolver/zentui/internal/triage"
 
 	"github.com/itsolver/zentui/internal/types"
 	"github.com/itsolver/zentui/pkg/zendesk"
@@ -27,6 +29,8 @@ type actionMode int
 const (
 	actionNone actionMode = iota
 	actionComment
+	actionApproval
+	actionMerge
 	actionStatus
 	actionPriority
 )
@@ -35,22 +39,27 @@ var validStatuses = []string{"new", "open", "pending", "hold", "solved"}
 var validPriorities = []string{"urgent", "high", "normal", "low"}
 
 type actionsModel struct {
-	tickets    zendesk.TicketService
-	ticketID   int64
-	mode       actionMode
-	textarea   textarea.Model
-	isPublic   bool
-	perms      permissions.Permissions
-	statusIdx  int
-	prioIdx    int
-	submitting bool
-	err        error
-	spinner    spinner.Model
-	width      int
-	height     int
-	current    string // current status or priority
-	ccPicker   ccPickerModel
-	ccFocused  bool
+	tickets          zendesk.TicketService
+	ticketID         int64
+	mode             actionMode
+	textarea         textarea.Model
+	isPublic         bool
+	perms            permissions.Permissions
+	statusIdx        int
+	prioIdx          int
+	suggestedStatus  string
+	elapsedSeconds   int
+	existingTotal    int
+	reasoningSummary string
+	sourceTicketID   int64
+	submitting       bool
+	err              error
+	spinner          spinner.Model
+	width            int
+	height           int
+	current          string // current status or priority
+	ccPicker         ccPickerModel
+	ccFocused        bool
 }
 
 func newActionsModel(tickets zendesk.TicketService, users zendesk.UserService) actionsModel {
@@ -81,6 +90,49 @@ func (m actionsModel) openComment(ticketID int64, perms permissions.Permissions)
 	m.ccFocused = false
 	m.ccPicker = m.ccPicker.reset()
 	m.textarea.Reset()
+	m.textarea.Placeholder = "Type your comment..."
+	m.textarea.SetHeight(6)
+	return m, m.textarea.Focus()
+}
+
+func (m actionsModel) openApproval(ticketID int64, perms permissions.Permissions, body string, suggestedStatus string, currentStatus string, elapsedSeconds int, existingTotal int, reasoningSummary string) (actionsModel, tea.Cmd) {
+	m.ticketID = ticketID
+	m.mode = actionApproval
+	m.perms = perms
+	m.isPublic = perms.CanPublicComment
+	m.err = nil
+	m.ccFocused = false
+	m.ccPicker = m.ccPicker.reset()
+	m.textarea.Reset()
+	m.textarea.Placeholder = "Review or edit the draft..."
+	m.textarea.SetHeight(8)
+	m.textarea.SetValue(body)
+	m.suggestedStatus = suggestedStatus
+	m.elapsedSeconds = elapsedSeconds
+	m.existingTotal = existingTotal
+	m.reasoningSummary = reasoningSummary
+	m.statusIdx = 0
+	defaultStatus := suggestedStatus
+	if defaultStatus == "" {
+		defaultStatus = currentStatus
+	}
+	for i, status := range validStatuses {
+		if status == defaultStatus {
+			m.statusIdx = i
+			break
+		}
+	}
+	return m, m.textarea.Focus()
+}
+
+func (m actionsModel) openMerge(sourceTicketID int64) (actionsModel, tea.Cmd) {
+	m.ticketID = sourceTicketID
+	m.sourceTicketID = sourceTicketID
+	m.mode = actionMerge
+	m.err = nil
+	m.textarea.Reset()
+	m.textarea.Placeholder = "Target ticket ID"
+	m.textarea.SetHeight(1)
 	return m, m.textarea.Focus()
 }
 
@@ -117,6 +169,8 @@ func (m actionsModel) openPriority(ticketID int64, currentPriority string) actio
 func (m actionsModel) close() actionsModel {
 	m.mode = actionNone
 	m.textarea.Blur()
+	m.textarea.Placeholder = "Type your comment..."
+	m.textarea.SetHeight(6)
 	return m
 }
 
@@ -142,6 +196,54 @@ func (m actionsModel) submitComment() tea.Cmd {
 			return actionErrMsg{err}
 		}
 		return ticketUpdatedMsg{ticket: ticket}
+	}
+}
+
+func (m actionsModel) submitApproval() tea.Cmd {
+	body := m.textarea.Value()
+	isPublic := m.isPublic
+	ticketID := m.ticketID
+	status := validStatuses[m.statusIdx]
+	tickets := m.tickets
+	elapsed := m.elapsedSeconds
+	existingTotal := m.existingTotal
+	return func() tea.Msg {
+		req := triage.BuildApprovalUpdate(triage.ApprovalInput{
+			Body:                 body,
+			Public:               isPublic,
+			ConfirmedStatus:      status,
+			ElapsedSeconds:       elapsed,
+			ExistingTotalSeconds: existingTotal,
+		})
+		ticket, err := tickets.Update(context.Background(), ticketID, req)
+		if err != nil {
+			return actionErrMsg{err}
+		}
+		return ticketUpdatedMsg{ticket: ticket}
+	}
+}
+
+func (m actionsModel) submitMerge() tea.Cmd {
+	sourceID := m.sourceTicketID
+	targetText := strings.TrimSpace(m.textarea.Value())
+	tickets := m.tickets
+	return func() tea.Msg {
+		targetID, err := strconv.ParseInt(targetText, 10, 64)
+		if err != nil || targetID <= 0 {
+			return actionErrMsg{err: fmt.Errorf("target ticket ID is required")}
+		}
+		result, err := tickets.MergeTickets(context.Background(), targetID, &types.MergeTicketsRequest{
+			IDs:           []int64{sourceID},
+			SourceComment: fmt.Sprintf("Closing as merged into #%d.", targetID),
+			TargetComment: fmt.Sprintf("Merging duplicate/follow-up ticket #%d.", sourceID),
+		})
+		if err != nil {
+			return actionErrMsg{err: err}
+		}
+		if result.Ticket != nil {
+			return ticketUpdatedMsg{ticket: result.Ticket}
+		}
+		return ticketUpdatedMsg{ticket: &types.Ticket{ID: targetID}}
 	}
 }
 
@@ -274,6 +376,56 @@ func (m actionsModel) Update(msg tea.Msg) (actionsModel, tea.Cmd) {
 				return m, cmd
 			}
 
+		case actionApproval:
+			switch {
+			case key.Matches(msg, keys.Back):
+				m = m.close()
+				return m, nil
+			case key.Matches(msg, keys.Submit):
+				if m.textarea.Value() != "" {
+					m.submitting = true
+					return m, tea.Batch(m.spinner.Tick, m.submitApproval())
+				}
+			case key.Matches(msg, keys.Tab):
+				if !m.perms.CanPublicComment {
+					return m, nil
+				}
+				m.isPublic = !m.isPublic
+				return m, nil
+			case key.Matches(msg, keys.Up):
+				if m.statusIdx > 0 {
+					m.statusIdx--
+				}
+				return m, nil
+			case key.Matches(msg, keys.Down):
+				if m.statusIdx < len(validStatuses)-1 {
+					m.statusIdx++
+				}
+				return m, nil
+			default:
+				var cmd tea.Cmd
+				m.textarea, cmd = m.textarea.Update(msg)
+				return m, cmd
+			}
+
+		case actionMerge:
+			switch {
+			case key.Matches(msg, keys.Back):
+				m = m.close()
+				m.textarea.Placeholder = "Type your comment..."
+				m.textarea.SetHeight(6)
+				return m, nil
+			case key.Matches(msg, keys.Submit):
+				if strings.TrimSpace(m.textarea.Value()) != "" {
+					m.submitting = true
+					return m, tea.Batch(m.spinner.Tick, m.submitMerge())
+				}
+			default:
+				var cmd tea.Cmd
+				m.textarea, cmd = m.textarea.Update(msg)
+				return m, cmd
+			}
+
 		case actionStatus:
 			switch {
 			case key.Matches(msg, keys.Back):
@@ -322,12 +474,77 @@ func (m actionsModel) View() string {
 	switch m.mode {
 	case actionComment:
 		return m.viewComment()
+	case actionApproval:
+		return m.viewApproval()
+	case actionMerge:
+		return m.viewMerge()
 	case actionStatus:
 		return m.viewPicker("Change Status", validStatuses, m.statusIdx)
 	case actionPriority:
 		return m.viewPicker("Change Priority", validPriorities, m.prioIdx)
 	}
 	return ""
+}
+
+func (m actionsModel) viewMerge() string {
+	title := titleStyle.Render("Merge Ticket")
+	width := m.width - 8
+	if width < 50 {
+		width = 50
+	}
+	m.textarea.SetWidth(width)
+	var statusLine string
+	if m.submitting {
+		statusLine = "\n" + m.spinner.View() + " Merging tickets..."
+	} else if m.err != nil {
+		statusLine = "\n" + errorStyle.Render("Error: "+m.err.Error())
+	}
+	content := title + "\n\n" +
+		labelStyle.Render("Source:") + " " + valueStyle.Render(fmt.Sprintf("#%d", m.sourceTicketID)) + "\n" +
+		labelStyle.Render("Target:") + "\n" + m.textarea.View() + "\n\n" +
+		dimStyle.Render("ctrl+s merge   esc cancel") + statusLine
+	return borderStyle.Width(width + 4).Render(content)
+}
+
+func (m actionsModel) viewApproval() string {
+	title := titleStyle.Render("Approve Draft")
+
+	var publicToggle string
+	if !m.perms.CanPublicComment {
+		publicToggle = "[x] Internal note only (light agent)"
+	} else if m.isPublic {
+		publicToggle = "[x] Public reply   [ ] Internal note"
+	} else {
+		publicToggle = "[ ] Public reply   [x] Internal note"
+	}
+
+	width := m.width - 8
+	if width < 50 {
+		width = 50
+	}
+	m.textarea.SetWidth(width)
+
+	status := validStatuses[m.statusIdx]
+	var statusLine strings.Builder
+	statusLine.WriteString(labelStyle.Render("Suggested status:") + " " + valueStyle.Render(m.suggestedStatus) + "\n")
+	statusLine.WriteString(labelStyle.Render("Confirmed status:") + " " + valueStyle.Render(status) + "\n")
+	if m.elapsedSeconds > 0 {
+		statusLine.WriteString(labelStyle.Render("Time write:") + " " + valueStyle.Render(fmt.Sprintf("%ds this update, %ds total", m.elapsedSeconds, m.existingTotal+m.elapsedSeconds)) + "\n")
+	}
+	if m.reasoningSummary != "" {
+		statusLine.WriteString(labelStyle.Render("AI note:") + " " + valueStyle.Render(m.reasoningSummary) + "\n")
+	}
+
+	var submitLine string
+	if m.submitting {
+		submitLine = "\n" + m.spinner.View() + " Posting approved update..."
+	} else if m.err != nil {
+		submitLine = "\n" + errorStyle.Render("Error: "+m.err.Error())
+	}
+
+	help := dimStyle.Render("ctrl+s post   esc cancel   tab public/internal   ↑↓ status")
+	content := title + "\n\n" + statusLine.String() + "\n" + m.textarea.View() + "\n\n" + publicToggle + "\n\n" + help + submitLine
+	return borderStyle.Width(width + 4).Render(content)
 }
 
 func (m actionsModel) viewComment() string {

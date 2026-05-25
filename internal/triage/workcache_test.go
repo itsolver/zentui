@@ -86,6 +86,18 @@ func TestImageAnalysisReadWrite(t *testing.T) {
 	assert.Equal(t, "error dialog", got["sha"].Summary)
 }
 
+func TestAppendCodexRun(t *testing.T) {
+	cache := WorkCache{Root: t.TempDir()}
+
+	require.NoError(t, cache.AppendCodexRun(123, map[string]any{"kind": "draft"}))
+	require.NoError(t, cache.AppendCodexRun(123, map[string]any{"kind": "image"}))
+
+	data, err := os.ReadFile(filepath.Join(cache.ticketDir(123), "codex-runs.jsonl"))
+	require.NoError(t, err)
+	assert.Contains(t, string(data), `"kind":"draft"`)
+	assert.Contains(t, string(data), `"kind":"image"`)
+}
+
 func TestCleanupClosedOnlyRemovesClosedFolders(t *testing.T) {
 	root := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "1"), 0o700))

@@ -67,6 +67,8 @@ func (m *cmdPaletteModel) open(state viewState, focus panelFocus, showDetail boo
 
 	// Ticket Actions
 	if hasItems || state == detailView {
+		items = append(items, cmdItem{"Generate draft", "d", "Ticket Actions", "draft"})
+		items = append(items, cmdItem{"Merge ticket", "M", "Ticket Actions", "merge"})
 		items = append(items, cmdItem{"Add comment", "c", "Ticket Actions", "comment"})
 		if perms.CanChangeStatus {
 			items = append(items, cmdItem{"Change status", "s", "Ticket Actions", "status"})

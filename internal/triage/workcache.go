@@ -287,6 +287,26 @@ func (c WorkCache) WriteImageAnalysis(ticketID int64, analysis map[string]ImageA
 	return os.WriteFile(filepath.Join(c.ticketDir(ticketID), "image-analysis.json"), append(data, '\n'), 0o600)
 }
 
+func (c WorkCache) AppendCodexRun(ticketID int64, record any) error {
+	if _, err := c.EnsureTicketDir(ticketID); err != nil {
+		return err
+	}
+	data, err := json.Marshal(record)
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(c.ticketDir(ticketID), "codex-runs.jsonl")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if _, err := f.Write(append(data, '\n')); err != nil {
+		return err
+	}
+	return nil
+}
+
 func CleanupClosed(ctx context.Context, root string, tickets zendesk.TicketService) error {
 	entries, err := os.ReadDir(root)
 	if err != nil {

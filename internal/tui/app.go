@@ -13,7 +13,9 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/itsolver/zentui/internal/browser"
+	"github.com/itsolver/zentui/internal/codexrunner"
 	"github.com/itsolver/zentui/internal/permissions"
+	"github.com/itsolver/zentui/internal/triage"
 	"github.com/itsolver/zentui/internal/types"
 	"github.com/itsolver/zentui/pkg/zendesk"
 )
@@ -43,6 +45,13 @@ const (
 
 type currentUserMsg struct{ user *types.User }
 
+type draftGeneratedMsg struct {
+	ticketID int64
+	output   triage.DraftOutput
+}
+
+type draftErrMsg struct{ err error }
+
 type App struct {
 	tickets     zendesk.TicketService
 	search      zendesk.SearchService
@@ -56,9 +65,15 @@ type App struct {
 	detail      detailModel
 	kanban      kanbanModel
 	actions     actionsModel
+	operator    operatorModel
 	searchM     searchModel
 	gotoM       gotoModel
 	cmdPalette  cmdPaletteModel
+	codex       codexrunner.Runner
+	workCache   triage.WorkCache
+	pythonBin   string
+	draftBusy   bool
+	draftErr    error
 	width       int
 	height      int
 	focus       panelFocus
@@ -67,7 +82,26 @@ type App struct {
 	cursorSeq   uint64
 }
 
+type AppOptions struct {
+	ViewID             int64
+	Limit              int
+	CustomerSupportDir string
+	CodexModel         string
+	CodexReasoning     string
+	PythonBin          string
+	WorkDir            string
+}
+
 func NewApp(tickets zendesk.TicketService, search zendesk.SearchService, users zendesk.UserService, subdomain, version string) App {
+	return NewAppWithOptions(tickets, search, users, subdomain, version, AppOptions{})
+}
+
+func NewAppWithOptions(tickets zendesk.TicketService, search zendesk.SearchService, users zendesk.UserService, subdomain, version string, opts AppOptions) App {
+	codex := codexrunner.Runner{
+		CustomerSupportDir: opts.CustomerSupportDir,
+		Model:              opts.CodexModel,
+		ReasoningEffort:    opts.CodexReasoning,
+	}
 	return App{
 		tickets:    tickets,
 		search:     search,
@@ -78,18 +112,22 @@ func NewApp(tickets zendesk.TicketService, search zendesk.SearchService, users z
 		state:      listView,
 		showDetail: false,
 		focus:      focusList,
-		list:       newListModel(tickets, search),
+		list:       newListModelWithOptions(tickets, search, opts.ViewID, opts.Limit),
 		detail:     newDetailModel(tickets),
 		kanban:     newKanbanModel(),
 		actions:    newActionsModel(tickets, users),
+		operator:   newOperatorModel(),
 		searchM:    newSearchModel(),
 		gotoM:      newGotoModel(),
 		cmdPalette: newCmdPaletteModel(),
+		codex:      codex,
+		workCache:  triage.WorkCache{Root: opts.WorkDir},
+		pythonBin:  opts.PythonBin,
 	}
 }
 
 func (m App) Init() tea.Cmd {
-	return tea.Batch(m.list.Init(), m.fetchCurrentUser())
+	return tea.Batch(m.list.Init(), m.fetchCurrentUser(), m.fetchTicketFields(), operatorTick())
 }
 
 func (m App) fetchCurrentUser() tea.Cmd {
@@ -105,15 +143,52 @@ func (m App) fetchCurrentUser() tea.Cmd {
 	}
 }
 
+func (m App) fetchTicketFields() tea.Cmd {
+	return func() tea.Msg {
+		if m.tickets == nil {
+			return ticketFieldsLoadedMsg{}
+		}
+		page, err := m.tickets.ListTicketFields(context.Background(), &types.ListTicketFieldsOptions{Limit: 100})
+		if err != nil {
+			return ticketFieldsLoadedMsg{}
+		}
+		return ticketFieldsLoadedMsg{fields: page.TicketFields}
+	}
+}
+
 func (m App) listPanelWidth() int {
 	if m.state != splitView || !m.showDetail {
 		return m.width
+	}
+	if m.operatorPanelWidth() > 0 {
+		w := (m.width - m.operatorPanelWidth() - 2) * 34 / 100
+		if w < 34 {
+			w = 34
+		}
+		return w
 	}
 	return (m.width - 1) / 2 // -1 for divider
 }
 
 func (m App) detailPanelWidth() int {
+	if opW := m.operatorPanelWidth(); opW > 0 {
+		return m.width - m.listPanelWidth() - opW - 2 // two dividers
+	}
 	return m.width - m.listPanelWidth() - 1 // -1 for divider
+}
+
+func (m App) operatorPanelWidth() int {
+	if m.state != splitView || !m.showDetail || m.width < 140 {
+		return 0
+	}
+	w := m.width / 5
+	if w < 30 {
+		w = 30
+	}
+	if w > 42 {
+		w = 42
+	}
+	return w
 }
 
 func (m App) autoLoadFirstTicket() tea.Cmd {
@@ -214,6 +289,66 @@ func ringBell() tea.Cmd {
 	}
 }
 
+func (m App) generateDraft(ticket types.Ticket) tea.Cmd {
+	codex := m.codex
+	cache := m.workCache
+	pythonBin := m.pythonBin
+	return func() tea.Msg {
+		analysis, _ := cache.ReadImageAnalysis(ticket.ID)
+		pack, err := triage.BuildDraftPromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, ticket.ID, "public", analysis)
+		if err != nil {
+			return draftErrMsg{err: err}
+		}
+		result, err := codex.RunPrompt(context.Background(), pack.Prompt, pack.Schema, nil)
+		if err != nil {
+			return draftErrMsg{err: err}
+		}
+		_ = cache.AppendCodexRun(ticket.ID, map[string]any{
+			"kind":       "draft",
+			"ticket_id":  ticket.ID,
+			"usage":      result.Usage,
+			"created_at": time.Now().UTC().Format(time.RFC3339),
+		})
+		output, err := codexrunner.DecodeOutput[triage.DraftOutput](result.Output)
+		if err != nil {
+			return draftErrMsg{err: err}
+		}
+		normalized, err := triage.NormalizeDraftPromptPackResult(context.Background(), codex.CustomerSupportDir, pythonBin, pack.Mode, output)
+		if err != nil {
+			return draftErrMsg{err: err}
+		}
+		return draftGeneratedMsg{ticketID: ticket.ID, output: normalized}
+	}
+}
+
+func (m App) activeTicket() (types.Ticket, bool) {
+	if m.state == detailView && m.detail.ticket != nil {
+		return *m.detail.ticket, true
+	}
+	if m.state == kanbanView {
+		if t := m.kanban.selectedTicket(); t != nil {
+			return *t, true
+		}
+	}
+	if len(m.list.items) > 0 && m.list.cursor >= 0 && m.list.cursor < len(m.list.items) {
+		return m.list.items[m.list.cursor], true
+	}
+	return types.Ticket{}, false
+}
+
+func (m App) startDraftForActiveTicket() (App, tea.Cmd) {
+	if m.draftBusy {
+		return m, nil
+	}
+	ticket, ok := m.activeTicket()
+	if !ok {
+		return m, nil
+	}
+	m.draftBusy = true
+	m.draftErr = nil
+	return m, m.generateDraft(ticket)
+}
+
 func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -255,6 +390,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			detailMsg := tea.WindowSizeMsg{Width: m.detailPanelWidth(), Height: msg.Height}
 			m.detail, cmd = m.detail.Update(detailMsg)
 			cmds = append(cmds, cmd)
+			m.operator.setSize(m.operatorPanelWidth(), msg.Height)
 		} else {
 			m.detail, cmd = m.detail.Update(msg)
 			cmds = append(cmds, cmd)
@@ -281,6 +417,30 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if key.Matches(msg, keys.CommandPalette) {
 				hasItems := len(m.list.items) > 0
 				cmd := m.cmdPalette.open(m.state, m.focus, m.showDetail, m.list.hasMore, hasItems, m.perms)
+				return m, cmd
+			}
+
+			if key.Matches(msg, keys.PauseTimer) {
+				m.operator.pauseResumeTimer()
+				return m, nil
+			}
+
+			if key.Matches(msg, keys.ResetTimer) {
+				m.operator.resetTimer()
+				return m, nil
+			}
+
+			if key.Matches(msg, keys.Draft) {
+				return m.startDraftForActiveTicket()
+			}
+
+			if key.Matches(msg, keys.Merge) {
+				ticket, ok := m.activeTicket()
+				if !ok {
+					return m, nil
+				}
+				var cmd tea.Cmd
+				m.actions, cmd = m.actions.openMerge(ticket.ID)
 				return m, cmd
 			}
 
@@ -392,12 +552,59 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.perms = permissions.FromUser(msg.user)
 		return m, nil
 
+	case ticketFieldsLoadedMsg:
+		m.operator.setTicketFields(msg.fields)
+		return m, nil
+
+	case operatorTickMsg:
+		return m, operatorTick()
+
+	case draftGeneratedMsg:
+		m.draftBusy = false
+		m.draftErr = nil
+		var current types.Ticket
+		if m.detail.ticket != nil && m.detail.ticket.ID == msg.ticketID {
+			current = *m.detail.ticket
+		} else {
+			for _, ticket := range m.list.items {
+				if ticket.ID == msg.ticketID {
+					current = ticket
+					break
+				}
+			}
+		}
+		existingTotal := triage.ExistingTotalSeconds(current)
+		var cmd tea.Cmd
+		m.actions, cmd = m.actions.openApproval(
+			msg.ticketID,
+			m.perms,
+			msg.output.Answer,
+			msg.output.RecommendedStatus,
+			current.Status,
+			m.operator.elapsedSeconds(),
+			existingTotal,
+			msg.output.ReasoningSummary,
+		)
+		return m, cmd
+
+	case draftErrMsg:
+		m.draftBusy = false
+		m.draftErr = msg.err
+		return m, nil
+
 	case ticketLoadedMsg:
 		var cmd tea.Cmd
 		m.detail, cmd = m.detail.Update(msg)
+		m.operator.setTicket(msg.ticket, msg.users, msg.organizations, len(m.detail.imageAttachments))
 		if m.state == detailView {
 			return m, tea.Batch(cmd, m.updateWindowTitle())
 		}
+		return m, cmd
+
+	case auditsLoadedMsg:
+		var cmd tea.Cmd
+		m.detail, cmd = m.detail.Update(msg)
+		m.operator.imageCount = len(m.detail.imageAttachments)
 		return m, cmd
 
 	case countdownTickMsg:
@@ -471,6 +678,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, cmd
 
 	case cursorChangedMsg:
+		m.operator.focusTicketID(msg.id)
 		if m.state == splitView && m.showDetail {
 			m.cursorSeq++
 			seq := m.cursorSeq
@@ -975,6 +1183,16 @@ func (m *App) handlePaletteAction(action string) (tea.Model, tea.Cmd) {
 			m.actions, cmd = m.actions.openComment(id, m.perms)
 			return m, cmd
 		}
+	case "draft":
+		return m.startDraftForActiveTicket()
+	case "merge":
+		ticket, ok := m.activeTicket()
+		if !ok {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.actions, cmd = m.actions.openMerge(ticket.ID)
+		return m, cmd
 	case "status":
 		var id int64
 		var status string
@@ -1146,13 +1364,16 @@ func (m App) View() tea.View {
 func (m App) renderSplitView() string {
 	listWidth := m.listPanelWidth()
 	detailWidth := m.detailPanelWidth()
+	operatorWidth := m.operatorPanelWidth()
 
 	listContent := m.list.View()
 	detailContent := m.detail.ViewPanel()
+	operatorContent := m.operator.View()
 
 	// Apply focus indicator
 	listPanel := lipgloss.NewStyle().Width(listWidth).Render(listContent)
 	detailPanel := lipgloss.NewStyle().Width(detailWidth).Render(detailContent)
+	operatorPanel := lipgloss.NewStyle().Width(operatorWidth).Render(operatorContent)
 
 	if m.focus == focusList {
 		listPanel = focusBorderStyle.Width(listWidth).Render(listContent)
@@ -1162,6 +1383,9 @@ func (m App) renderSplitView() string {
 
 	divider := m.renderDivider()
 
+	if operatorWidth > 0 {
+		return lipgloss.JoinHorizontal(lipgloss.Top, listPanel, divider, detailPanel, divider, operatorPanel)
+	}
 	return lipgloss.JoinHorizontal(lipgloss.Top, listPanel, divider, detailPanel)
 }
 
@@ -1178,23 +1402,29 @@ func (m App) helpBar() string {
 	var left string
 	switch m.state {
 	case listView:
-		left = "↑↓ navigate  enter view  / search  m my-tickets  ctrl+p commands  q quit"
+		left = "↑↓ navigate  enter view  d draft  M merge  / search  ctrl+p commands  q quit"
 	case detailView:
 		if len(m.detail.imageAttachments) > 0 {
-			left = "↑↓ scroll  i images  esc back  ctrl+p commands  q quit"
+			left = "↑↓ scroll  d draft  M merge  i images  esc back  ctrl+p commands  q quit"
 		} else {
-			left = "↑↓ scroll  esc back  ctrl+p commands  q quit"
+			left = "↑↓ scroll  d draft  M merge  esc back  ctrl+p commands  q quit"
 		}
 	case splitView:
 		if m.focus == focusList {
-			left = "↑↓ navigate  enter view  tab focus  m my-tickets  ctrl+p commands  q quit"
+			left = "↑↓ navigate  enter view  d draft  M merge  tab focus  ctrl+p commands  q quit"
 		} else if len(m.detail.imageAttachments) > 0 {
-			left = "↑↓ scroll  i images  tab focus  esc back  ctrl+p commands  q quit"
+			left = "↑↓ scroll  d draft  M merge  i images  tab focus  esc back  ctrl+p commands  q quit"
 		} else {
-			left = "↑↓ scroll  tab focus  esc back  ctrl+p commands  q quit"
+			left = "↑↓ scroll  d draft  M merge  tab focus  esc back  ctrl+p commands  q quit"
 		}
 	case kanbanView:
-		left = "←→ columns  ↑↓ navigate  enter view  w list  m my-tickets  / search  ctrl+p commands  q quit"
+		left = "←→ columns  ↑↓ navigate  enter view  d draft  M merge  w list  ctrl+p commands  q quit"
+	}
+
+	if m.draftBusy {
+		left = "Generating draft with codex exec...  " + left
+	} else if m.draftErr != nil {
+		left = errorStyle.Render("Draft error: "+m.draftErr.Error()) + "  " + left
 	}
 
 	if m.currentUser == nil || m.width == 0 {

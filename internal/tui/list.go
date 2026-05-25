@@ -49,6 +49,8 @@ type moreSearchResultsMsg struct {
 type listModel struct {
 	tickets             zendesk.TicketService
 	search              zendesk.SearchService
+	viewID              int64
+	limit               int
 	items               []types.Ticket
 	users               map[int64]types.User
 	cursor              int
@@ -74,12 +76,21 @@ type listModel struct {
 }
 
 func newListModel(tickets zendesk.TicketService, search zendesk.SearchService) listModel {
+	return newListModelWithOptions(tickets, search, 0, 50)
+}
+
+func newListModelWithOptions(tickets zendesk.TicketService, search zendesk.SearchService, viewID int64, limit int) listModel {
+	if limit <= 0 {
+		limit = 50
+	}
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(ac("#1D4ED8", "#93C5FD"))
 	return listModel{
 		tickets:   tickets,
 		search:    search,
+		viewID:    viewID,
+		limit:     limit,
 		loading:   true,
 		spinner:   s,
 		showChart: true,
@@ -93,12 +104,12 @@ func (m listModel) Init() tea.Cmd {
 func (m listModel) loadTickets() tea.Cmd {
 	return func() tea.Msg {
 		opts := &types.ListTicketsOptions{
-			Limit:     50,
+			Limit:     m.limit,
 			Sort:      "updated_at",
 			SortOrder: "desc",
-			Include:   "users",
+			Include:   "users,organizations",
 		}
-		page, err := m.tickets.List(context.Background(), opts)
+		page, err := m.loadTicketPage(context.Background(), opts)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -134,12 +145,12 @@ func scheduleCountdownTick() tea.Cmd {
 func (m listModel) loadTicketsForRefresh() tea.Cmd {
 	return func() tea.Msg {
 		opts := &types.ListTicketsOptions{
-			Limit:     50,
+			Limit:     m.limit,
 			Sort:      "updated_at",
 			SortOrder: "desc",
-			Include:   "users",
+			Include:   "users,organizations",
 		}
-		page, err := m.tickets.List(context.Background(), opts)
+		page, err := m.loadTicketPage(context.Background(), opts)
 		if err != nil {
 			return errMsg{err}
 		}
@@ -150,18 +161,34 @@ func (m listModel) loadTicketsForRefresh() tea.Cmd {
 func (m listModel) loadMoreTickets() tea.Cmd {
 	return func() tea.Msg {
 		opts := &types.ListTicketsOptions{
-			Limit:     50,
+			Limit:     m.limit,
 			Sort:      "updated_at",
 			SortOrder: "desc",
-			Include:   "users",
+			Include:   "users,organizations",
 			Cursor:    m.afterCursor,
 		}
-		page, err := m.tickets.List(context.Background(), opts)
+		page, err := m.loadTicketPage(context.Background(), opts)
 		if err != nil {
 			return errMsg{err}
 		}
 		return moreTicketsLoadedMsg{page}
 	}
+}
+
+func (m listModel) loadTicketPage(ctx context.Context, opts *types.ListTicketsOptions) (*types.TicketPage, error) {
+	if m.viewID > 0 {
+		viewOpts := &types.ListTicketsOptions{}
+		if opts != nil {
+			*viewOpts = *opts
+		}
+		viewOpts.Sort = ""
+		viewOpts.SortOrder = ""
+		viewOpts.Status = ""
+		viewOpts.Assignee = 0
+		viewOpts.Group = 0
+		return m.tickets.ListView(ctx, m.viewID, viewOpts)
+	}
+	return m.tickets.List(ctx, opts)
 }
 
 func (m listModel) loadMoreSearch() tea.Cmd {
@@ -391,6 +418,10 @@ func (m listModel) View() string {
 		} else {
 			countLabel = fmt.Sprintf("%d results for %q", len(m.items), m.searchQuery)
 		}
+	} else if m.viewID > 0 && m.totalCount > len(m.items) {
+		countLabel = fmt.Sprintf("View %d · showing %d of %d", m.viewID, len(m.items), m.totalCount)
+	} else if m.viewID > 0 {
+		countLabel = fmt.Sprintf("View %d · %d tickets", m.viewID, len(m.items))
 	} else if m.totalCount > len(m.items) {
 		countLabel = fmt.Sprintf("Showing %d of %d tickets", len(m.items), m.totalCount)
 	} else {
