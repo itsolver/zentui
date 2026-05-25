@@ -95,6 +95,14 @@ func TestDefaultCustomerSupportDirUsesEnv(t *testing.T) {
 	assert.Equal(t, dir, defaultCustomerSupportDir())
 }
 
+func TestZendeskAttachmentHostsIncludesContentDomains(t *testing.T) {
+	hosts := zendeskAttachmentHosts("example")
+
+	assert.Contains(t, hosts, "example.zendesk.com")
+	assert.Contains(t, hosts, ".zdusercontent.com")
+	assert.Contains(t, hosts, ".zendeskusercontent.com")
+}
+
 func TestNewArticleServiceHonorsDemoMode(t *testing.T) {
 	cmd := &cobra.Command{}
 	cmd.Flags().String("profile", "default", "")

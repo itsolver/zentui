@@ -151,6 +151,16 @@ func TestDownloadImageUsesAuthClientOnlyForTrustedHosts(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestWorkCacheTrustsZendeskContentHostSuffixes(t *testing.T) {
+	cache := WorkCache{
+		HTTPClient:   &http.Client{Transport: authHeaderTransport{base: http.DefaultTransport}},
+		TrustedHosts: []string{".zdusercontent.com"},
+	}
+
+	assert.Same(t, cache.HTTPClient, cache.clientForSource("https://attachments.zdusercontent.com/asset.png"))
+	assert.Same(t, http.DefaultClient, cache.clientForSource("https://notzdusercontent.com/asset.png"))
+}
+
 func TestSafeFilenameHandlesOversizedExtension(t *testing.T) {
 	name := safeFilename("screen." + strings.Repeat("x", 200))
 

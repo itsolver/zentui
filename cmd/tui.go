@@ -104,7 +104,7 @@ var tuiCmd = &cobra.Command{
 		}
 		var trustedAttachmentHosts []string
 		if subdomain != "" {
-			trustedAttachmentHosts = []string{subdomain + ".zendesk.com"}
+			trustedAttachmentHosts = zendeskAttachmentHosts(subdomain)
 		}
 
 		viewID, _ := cmd.Flags().GetInt64("view-id")
@@ -135,4 +135,12 @@ var tuiCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func zendeskAttachmentHosts(subdomain string) []string {
+	return []string{
+		subdomain + ".zendesk.com",
+		".zdusercontent.com",
+		".zendeskusercontent.com",
+	}
 }

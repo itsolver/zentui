@@ -377,6 +377,12 @@ func (c WorkCache) clientForSource(raw string) *http.Client {
 	hostname := strings.ToLower(parsed.Hostname())
 	for _, trusted := range c.TrustedHosts {
 		trusted = strings.ToLower(strings.TrimSpace(trusted))
+		if trusted == "" {
+			continue
+		}
+		if strings.HasPrefix(trusted, ".") && strings.HasSuffix(hostname, trusted) {
+			return c.HTTPClient
+		}
 		if host == trusted || hostname == trusted {
 			return c.HTTPClient
 		}
