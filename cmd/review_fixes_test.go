@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -9,6 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/itsolver/zentui/internal/demo"
 )
 
 func TestDeleteConfirmationPersistsAcrossInvocations(t *testing.T) {
@@ -72,4 +75,44 @@ func TestValidateIfExists(t *testing.T) {
 	err := validateIfExists("overwrite")
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "invalid --if-exists")
+}
+
+func TestDefaultTriageViewIDUsesEnvOnly(t *testing.T) {
+	t.Setenv("TICKET_TRIAGE_VIEW_ID", "")
+	assert.Zero(t, defaultTriageViewID())
+
+	t.Setenv("TICKET_TRIAGE_VIEW_ID", "7484423111055")
+	assert.Equal(t, int64(7484423111055), defaultTriageViewID())
+
+	t.Setenv("TICKET_TRIAGE_VIEW_ID", "not-a-number")
+	assert.Zero(t, defaultTriageViewID())
+}
+
+func TestDefaultCustomerSupportDirUsesEnv(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("ZENTUI_CUSTOMER_SUPPORT_DIR", dir)
+
+	assert.Equal(t, dir, defaultCustomerSupportDir())
+}
+
+func TestZendeskAttachmentHostsIncludesContentDomains(t *testing.T) {
+	hosts := zendeskAttachmentHosts("example")
+
+	assert.Contains(t, hosts, "example.zendesk.com")
+	assert.Contains(t, hosts, ".zdusercontent.com")
+	assert.Contains(t, hosts, ".zendeskusercontent.com")
+}
+
+func TestNewArticleServiceHonorsDemoMode(t *testing.T) {
+	cmd := &cobra.Command{}
+	cmd.Flags().String("profile", "default", "")
+	cmd.Flags().String("trace-id", "", "")
+	cmd.SetContext(context.WithValue(context.Background(), ctxKeyDemoStore, demo.NewStore()))
+
+	svc, err := newArticleService(cmd)
+	require.NoError(t, err)
+
+	page, err := svc.List(context.Background(), nil)
+	require.NoError(t, err)
+	require.NotEmpty(t, page.Articles)
 }

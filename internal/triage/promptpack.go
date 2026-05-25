@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 )
 
 type PromptPack struct {
@@ -59,8 +60,9 @@ type MergeNormalizeResult struct {
 }
 
 func BuildDraftPromptPack(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64, mode string, imageObservations any) (*PromptPack, error) {
-	if pythonBin == "" {
-		pythonBin = filepath.Join(customerSupportDir, ".venv", "bin", "python")
+	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
+	if err != nil {
+		return nil, err
 	}
 	payload := map[string]any{"mode": mode}
 	if imageObservations != nil {
@@ -94,8 +96,9 @@ func BuildDraftPromptPack(ctx context.Context, customerSupportDir string, python
 }
 
 func BuildImagePromptPack(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64, filename string, sourceURL string, commentContext string) (*PromptPack, error) {
-	if pythonBin == "" {
-		pythonBin = filepath.Join(customerSupportDir, ".venv", "bin", "python")
+	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
+	if err != nil {
+		return nil, err
 	}
 	args := []string{"scripts/local_triage_codex.py", "image-pack", fmt.Sprint(ticketID), "--filename", filename}
 	if sourceURL != "" {
@@ -125,8 +128,9 @@ func BuildImagePromptPack(ctx context.Context, customerSupportDir string, python
 }
 
 func BuildMergePool(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64) (*MergePool, error) {
-	if pythonBin == "" {
-		pythonBin = filepath.Join(customerSupportDir, ".venv", "bin", "python")
+	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
+	if err != nil {
+		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, pythonBin, "scripts/local_triage_codex.py", "merge-pool", fmt.Sprint(ticketID))
 	cmd.Dir = customerSupportDir
@@ -149,8 +153,9 @@ func BuildMergePool(ctx context.Context, customerSupportDir string, pythonBin st
 }
 
 func BuildMergePromptPack(ctx context.Context, customerSupportDir string, pythonBin string, sourceTicket map[string]any, candidates []map[string]any) (*PromptPack, error) {
-	if pythonBin == "" {
-		pythonBin = filepath.Join(customerSupportDir, ".venv", "bin", "python")
+	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
+	if err != nil {
+		return nil, err
 	}
 	body, err := json.Marshal(map[string]any{
 		"source_ticket": sourceTicket,
@@ -181,8 +186,9 @@ func BuildMergePromptPack(ctx context.Context, customerSupportDir string, python
 }
 
 func NormalizeMergePromptPackResult(ctx context.Context, customerSupportDir string, pythonBin string, codexPayload json.RawMessage, candidates []map[string]any) (MergeNormalizeResult, error) {
-	if pythonBin == "" {
-		pythonBin = filepath.Join(customerSupportDir, ".venv", "bin", "python")
+	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
+	if err != nil {
+		return MergeNormalizeResult{}, err
 	}
 	var payload any
 	if err := json.Unmarshal(codexPayload, &payload); err != nil {
@@ -211,8 +217,9 @@ func NormalizeMergePromptPackResult(ctx context.Context, customerSupportDir stri
 }
 
 func NormalizeDraftPromptPackResult(ctx context.Context, customerSupportDir string, pythonBin string, mode string, output DraftOutput) (DraftOutput, error) {
-	if pythonBin == "" {
-		pythonBin = filepath.Join(customerSupportDir, ".venv", "bin", "python")
+	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
+	if err != nil {
+		return DraftOutput{}, err
 	}
 	body, err := json.Marshal(output)
 	if err != nil {
@@ -233,4 +240,15 @@ func NormalizeDraftPromptPackResult(ctx context.Context, customerSupportDir stri
 		return DraftOutput{}, err
 	}
 	return normalized, nil
+}
+
+func resolvePromptPackRuntime(customerSupportDir string, pythonBin string) (string, string, error) {
+	customerSupportDir = strings.TrimSpace(customerSupportDir)
+	if customerSupportDir == "" {
+		return "", "", errors.New("customer-support directory is required; set --customer-support-dir or ZENTUI_CUSTOMER_SUPPORT_DIR")
+	}
+	if pythonBin == "" {
+		pythonBin = filepath.Join(customerSupportDir, ".venv", "bin", "python")
+	}
+	return customerSupportDir, pythonBin, nil
 }

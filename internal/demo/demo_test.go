@@ -68,6 +68,73 @@ func TestTicketServiceListPagination(t *testing.T) {
 	}
 }
 
+func TestArticleServiceListPagination(t *testing.T) {
+	svc := NewArticleService(NewStore())
+	ctx := context.Background()
+
+	page1, err := svc.List(ctx, &types.ListArticlesOptions{Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, page1.Articles, 1)
+	assert.True(t, page1.Meta.HasMore)
+	assert.NotEmpty(t, page1.Meta.AfterCursor)
+
+	page2, err := svc.List(ctx, &types.ListArticlesOptions{Limit: 1, Cursor: page1.Meta.AfterCursor})
+	require.NoError(t, err)
+	require.Len(t, page2.Articles, 1)
+	assert.NotEqual(t, page1.Articles[0].ID, page2.Articles[0].ID)
+	assert.False(t, page2.Meta.HasMore)
+}
+
+func TestArticleServiceListClampsNegativeCursor(t *testing.T) {
+	svc := NewArticleService(NewStore())
+	ctx := context.Background()
+
+	page, err := svc.List(ctx, &types.ListArticlesOptions{Limit: 1, Cursor: encodeCursor(-1)})
+
+	require.NoError(t, err)
+	require.Len(t, page.Articles, 1)
+	assert.Equal(t, int64(9001), page.Articles[0].ID)
+}
+
+func TestArticleServiceListSorts(t *testing.T) {
+	svc := NewArticleService(NewStore())
+	ctx := context.Background()
+
+	page, err := svc.List(ctx, &types.ListArticlesOptions{Limit: 2, SortBy: "title", SortOrder: "desc"})
+
+	require.NoError(t, err)
+	require.Len(t, page.Articles, 2)
+	assert.Equal(t, int64(9002), page.Articles[0].ID)
+	assert.Equal(t, int64(9001), page.Articles[1].ID)
+}
+
+func TestArticleServiceSearchPagination(t *testing.T) {
+	svc := NewArticleService(NewStore())
+	ctx := context.Background()
+
+	page1, err := svc.Search(ctx, "", &types.SearchArticlesOptions{Limit: 1})
+	require.NoError(t, err)
+	require.Len(t, page1.Results, 1)
+	assert.True(t, page1.Meta.HasMore)
+
+	page2, err := svc.Search(ctx, "", &types.SearchArticlesOptions{Limit: 1, Cursor: page1.Meta.AfterCursor})
+	require.NoError(t, err)
+	require.Len(t, page2.Results, 1)
+	assert.NotEqual(t, page1.Results[0].ID, page2.Results[0].ID)
+	assert.False(t, page2.Meta.HasMore)
+}
+
+func TestArticleServiceGetNotFound(t *testing.T) {
+	svc := NewArticleService(NewStore())
+
+	_, err := svc.Get(context.Background(), 999)
+
+	require.Error(t, err)
+	appErr, ok := err.(*types.AppError)
+	require.True(t, ok, "expected AppError, got %T", err)
+	assert.Equal(t, "not_found", appErr.Code)
+}
+
 func TestTicketServiceListFilterStatus(t *testing.T) {
 	s := NewStore()
 	svc := NewTicketService(s)

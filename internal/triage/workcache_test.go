@@ -4,8 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -93,6 +96,115 @@ func TestDownloadImageSkipsUnsupportedContentType(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, asset.Skipped)
 	assert.Equal(t, "unsupported content type", asset.SkipReason)
+}
+
+func TestDownloadImageReusesSkippedURL(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Write([]byte("pdf"))
+	}))
+	defer server.Close()
+
+	cache := WorkCache{Root: t.TempDir(), HTTPClient: server.Client()}
+	source := ImageSource{URL: server.URL + "/file.pdf", Filename: "file.pdf"}
+
+	first, err := cache.DownloadImage(context.Background(), 123, source)
+	require.NoError(t, err)
+	second, err := cache.DownloadImage(context.Background(), 123, source)
+	require.NoError(t, err)
+
+	assert.True(t, first.Skipped)
+	assert.Equal(t, first, second)
+	assert.Equal(t, int32(1), requests.Load())
+
+	manifest, err := cache.ReadManifest(123)
+	require.NoError(t, err)
+	require.Len(t, manifest.Assets, 1)
+}
+
+func TestDownloadImageUsesAuthClientOnlyForTrustedHosts(t *testing.T) {
+	trusted := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "Bearer secret", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "image/png")
+		w.Write([]byte("png-data"))
+	}))
+	defer trusted.Close()
+	external := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Empty(t, r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "image/png")
+		w.Write([]byte("png-data-2"))
+	}))
+	defer external.Close()
+
+	trustedURL := mustParseURL(t, trusted.URL)
+	cache := WorkCache{
+		Root:         t.TempDir(),
+		HTTPClient:   &http.Client{Transport: authHeaderTransport{base: trusted.Client().Transport}},
+		TrustedHosts: []string{trustedURL.Host},
+	}
+
+	_, err := cache.DownloadImage(context.Background(), 123, ImageSource{URL: trusted.URL + "/trusted.png", Filename: "trusted.png"})
+	require.NoError(t, err)
+	_, err = cache.DownloadImage(context.Background(), 123, ImageSource{URL: external.URL + "/external.png", Filename: "external.png"})
+	require.NoError(t, err)
+}
+
+func TestWorkCacheTrustsZendeskContentHostSuffixes(t *testing.T) {
+	untrusted := &http.Client{Timeout: time.Second}
+	cache := WorkCache{
+		HTTPClient:          &http.Client{Transport: authHeaderTransport{base: http.DefaultTransport}},
+		UntrustedHTTPClient: untrusted,
+		TrustedHosts:        []string{".zdusercontent.com"},
+	}
+
+	assert.Same(t, cache.HTTPClient, cache.clientForSource("https://attachments.zdusercontent.com/asset.png"))
+	assert.Same(t, untrusted, cache.clientForSource("https://notzdusercontent.com/asset.png"))
+	assert.Same(t, untrusted, cache.clientForSource("http://attachments.zdusercontent.com/asset.png"))
+}
+
+func TestWorkCacheRequiresTrustedHostsBeforeUsingAuthClient(t *testing.T) {
+	untrusted := &http.Client{Timeout: time.Second}
+	cache := WorkCache{
+		HTTPClient:          &http.Client{Transport: authHeaderTransport{base: http.DefaultTransport}},
+		UntrustedHTTPClient: untrusted,
+	}
+
+	assert.Same(t, untrusted, cache.clientForSource("https://attachments.zdusercontent.com/asset.png"))
+}
+
+func TestWorkCacheUsesBoundedDefaultUntrustedClient(t *testing.T) {
+	cache := WorkCache{HTTPClient: &http.Client{}, TrustedHosts: []string{"example.zendesk.com"}}
+
+	client := cache.clientForSource("https://external.example.test/asset.png")
+
+	require.NotNil(t, client)
+	assert.Equal(t, 30*time.Second, client.Timeout)
+}
+
+func TestSafeFilenameHandlesOversizedExtension(t *testing.T) {
+	name := safeFilename("screen." + strings.Repeat("x", 200))
+
+	assert.NotEmpty(t, name)
+	assert.LessOrEqual(t, len(name), 120)
+}
+
+type authHeaderTransport struct {
+	base http.RoundTripper
+}
+
+func (t authHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	clone := req.Clone(req.Context())
+	clone.Header.Set("Authorization", "Bearer secret")
+	return t.base.RoundTrip(clone)
+}
+
+func mustParseURL(t *testing.T, raw string) *url.URL {
+	t.Helper()
+	parsed, err := url.Parse(raw)
+	require.NoError(t, err)
+	return parsed
 }
 
 func TestImageAnalysisReadWrite(t *testing.T) {

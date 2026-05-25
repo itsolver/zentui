@@ -101,14 +101,16 @@ type App struct {
 }
 
 type AppOptions struct {
-	ViewID             int64
-	Limit              int
-	CustomerSupportDir string
-	CodexModel         string
-	CodexReasoning     string
-	PythonBin          string
-	WorkDir            string
-	HTTPClient         *http.Client
+	ViewID              int64
+	Limit               int
+	CustomerSupportDir  string
+	CodexModel          string
+	CodexReasoning      string
+	PythonBin           string
+	WorkDir             string
+	HTTPClient          *http.Client
+	UntrustedHTTPClient *http.Client
+	TrustedHosts        []string
 }
 
 func NewApp(tickets zendesk.TicketService, search zendesk.SearchService, users zendesk.UserService, subdomain, version string) App {
@@ -140,7 +142,7 @@ func NewAppWithOptions(tickets zendesk.TicketService, search zendesk.SearchServi
 		gotoM:      newGotoModel(),
 		cmdPalette: newCmdPaletteModel(),
 		codex:      codex,
-		workCache:  triage.WorkCache{Root: opts.WorkDir, HTTPClient: opts.HTTPClient},
+		workCache:  triage.WorkCache{Root: opts.WorkDir, HTTPClient: opts.HTTPClient, UntrustedHTTPClient: opts.UntrustedHTTPClient, TrustedHosts: opts.TrustedHosts},
 		pythonBin:  opts.PythonBin,
 	}
 }
@@ -628,7 +630,10 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case tea.KeyPressMsg, spinner.TickMsg, ticketUpdatedMsg, actionErrMsg, mergePreviewMsg, ccAutocompleteMsg, ccAutocompleteErrMsg:
 			var cmd tea.Cmd
 			m.actions, cmd = m.actions.Update(msg)
-			if _, ok := msg.(ticketUpdatedMsg); ok {
+			if updated, ok := msg.(ticketUpdatedMsg); ok {
+				if updated.warning != nil {
+					m.mergeErr = updated.warning
+				}
 				m.operator.resetTimer()
 				m.list.loading = true
 				return m, tea.Batch(cmd, m.list.spinner.Tick, m.list.loadTickets())

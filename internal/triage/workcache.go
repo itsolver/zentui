@@ -28,8 +28,10 @@ const (
 var inlineURLRe = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 type WorkCache struct {
-	Root       string
-	HTTPClient *http.Client
+	Root                string
+	HTTPClient          *http.Client
+	UntrustedHTTPClient *http.Client
+	TrustedHosts        []string
 }
 
 type ImageSource struct {
@@ -195,7 +197,7 @@ func (c WorkCache) DownloadImage(ctx context.Context, ticketID int64, source Ima
 		return AssetRecord{}, err
 	}
 	for _, asset := range manifest.Assets {
-		if asset.SourceURL == source.URL && !asset.Skipped {
+		if asset.SourceURL == source.URL {
 			return asset, nil
 		}
 	}
@@ -205,10 +207,7 @@ func (c WorkCache) DownloadImage(ctx context.Context, ticketID int64, source Ima
 		return asset, c.addAsset(ticketID, asset)
 	}
 
-	client := c.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client := c.clientForSource(source.URL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source.URL, nil)
 	if err != nil {
 		return AssetRecord{}, err
@@ -364,6 +363,44 @@ func (c WorkCache) addAsset(ticketID int64, asset AssetRecord) error {
 	return c.WriteManifest(ticketID, manifest)
 }
 
+func (c WorkCache) clientForSource(raw string) *http.Client {
+	if c.HTTPClient == nil {
+		return c.untrustedClient()
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return c.untrustedClient()
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return c.untrustedClient()
+	}
+	if len(c.TrustedHosts) == 0 {
+		return c.untrustedClient()
+	}
+	host := strings.ToLower(parsed.Host)
+	hostname := strings.ToLower(parsed.Hostname())
+	for _, trusted := range c.TrustedHosts {
+		trusted = strings.ToLower(strings.TrimSpace(trusted))
+		if trusted == "" {
+			continue
+		}
+		if strings.HasPrefix(trusted, ".") && strings.HasSuffix(hostname, trusted) {
+			return c.HTTPClient
+		}
+		if host == trusted || hostname == trusted {
+			return c.HTTPClient
+		}
+	}
+	return c.untrustedClient()
+}
+
+func (c WorkCache) untrustedClient() *http.Client {
+	if c.UntrustedHTTPClient != nil {
+		return c.UntrustedHTTPClient
+	}
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
 func skippedAsset(source ImageSource, reason string) AssetRecord {
 	filename := safeFilename(source.Filename)
 	if filename == "" {
@@ -410,8 +447,12 @@ func safeFilename(name string) string {
 	name = strings.Trim(name, ". ")
 	if len(name) > 120 {
 		ext := filepath.Ext(name)
-		name = strings.TrimSuffix(name, ext)
-		name = name[:120-len(ext)] + ext
+		if len(ext) >= 120 {
+			name = name[:120]
+		} else {
+			base := strings.TrimSuffix(name, ext)
+			name = base[:120-len(ext)] + ext
+		}
 	}
 	return name
 }

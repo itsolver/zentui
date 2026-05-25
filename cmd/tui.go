@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -19,9 +21,9 @@ import (
 )
 
 func init() {
-	tuiCmd.Flags().Int64("view-id", defaultTriageViewID(), "Zendesk view ID to load in the queue")
+	tuiCmd.Flags().Int64("view-id", defaultTriageViewID(), "Zendesk view ID to load in the queue (default from TICKET_TRIAGE_VIEW_ID; 0 lists tickets)")
 	tuiCmd.Flags().Int("limit", 20, "Number of tickets to request per page")
-	tuiCmd.Flags().String("customer-support-dir", "/Users/angusmclauchlan/Projects/itsolver/customer-support", "Customer-support repo used for local Codex prompt packs")
+	tuiCmd.Flags().String("customer-support-dir", "", "Customer-support repo used for local Codex prompt packs (defaults to ZENTUI_CUSTOMER_SUPPORT_DIR or a sibling customer-support checkout when present)")
 	tuiCmd.Flags().String("codex-model", "", "Optional Codex model override")
 	tuiCmd.Flags().String("codex-reasoning-effort", "", "Optional Codex model reasoning effort")
 	tuiCmd.Flags().String("python-bin", "", "Python interpreter for customer-support prompt-pack helpers")
@@ -30,16 +32,39 @@ func init() {
 }
 
 func defaultTriageViewID() int64 {
-	const fallback int64 = 7484423111055
-	raw := os.Getenv("TICKET_TRIAGE_VIEW_ID")
+	raw := strings.TrimSpace(os.Getenv("TICKET_TRIAGE_VIEW_ID"))
 	if raw == "" {
-		return fallback
+		return 0
 	}
 	id, err := strconv.ParseInt(raw, 10, 64)
 	if err != nil || id <= 0 {
-		return fallback
+		return 0
 	}
 	return id
+}
+
+func defaultCustomerSupportDir() string {
+	if raw := strings.TrimSpace(os.Getenv("ZENTUI_CUSTOMER_SUPPORT_DIR")); raw != "" {
+		return raw
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	for _, candidate := range []string{
+		filepath.Join(wd, "..", "customer-support"),
+		filepath.Join(wd, "customer-support"),
+	} {
+		if localTriageHelperExists(candidate) {
+			return candidate
+		}
+	}
+	return ""
+}
+
+func localTriageHelperExists(dir string) bool {
+	info, err := os.Stat(filepath.Join(dir, "scripts", "local_triage_codex.py"))
+	return err == nil && !info.IsDir()
 }
 
 var tuiCmd = &cobra.Command{
@@ -51,6 +76,7 @@ var tuiCmd = &cobra.Command{
 		var searchSvc zendesk.SearchService
 		var userSvc zendesk.UserService
 		var attachmentHTTPClient *http.Client
+		var untrustedAttachmentHTTPClient *http.Client
 		if store := demoStoreFromCtx(cmd.Context()); store != nil {
 			ticketSvc = demo.NewTicketService(store)
 			searchSvc = demo.NewSearchService(store)
@@ -64,6 +90,7 @@ var tuiCmd = &cobra.Command{
 			searchSvc = api.NewSearchService(client)
 			userSvc = api.NewUserService(client)
 			attachmentHTTPClient = client.HTTPClient
+			untrustedAttachmentHTTPClient = nonAuthAttachmentHTTPClient(client.HTTPClient)
 			c := cache.New(60 * time.Second)
 			ticketSvc = cache.NewCachedTicketService(ticketSvc, c)
 			searchSvc = cache.NewCachedSearchService(searchSvc, c)
@@ -77,23 +104,32 @@ var tuiCmd = &cobra.Command{
 				subdomain = creds.Subdomain
 			}
 		}
+		var trustedAttachmentHosts []string
+		if subdomain != "" {
+			trustedAttachmentHosts = zendeskAttachmentHosts(subdomain)
+		}
 
 		viewID, _ := cmd.Flags().GetInt64("view-id")
 		limit, _ := cmd.Flags().GetInt("limit")
 		customerSupportDir, _ := cmd.Flags().GetString("customer-support-dir")
+		if strings.TrimSpace(customerSupportDir) == "" {
+			customerSupportDir = defaultCustomerSupportDir()
+		}
 		codexModel, _ := cmd.Flags().GetString("codex-model")
 		codexReasoning, _ := cmd.Flags().GetString("codex-reasoning-effort")
 		pythonBin, _ := cmd.Flags().GetString("python-bin")
 		workDir, _ := cmd.Flags().GetString("work-dir")
 		app := tui.NewAppWithOptions(ticketSvc, searchSvc, userSvc, subdomain, buildVersion, tui.AppOptions{
-			ViewID:             viewID,
-			Limit:              limit,
-			CustomerSupportDir: customerSupportDir,
-			CodexModel:         codexModel,
-			CodexReasoning:     codexReasoning,
-			PythonBin:          pythonBin,
-			WorkDir:            workDir,
-			HTTPClient:         attachmentHTTPClient,
+			ViewID:              viewID,
+			Limit:               limit,
+			CustomerSupportDir:  customerSupportDir,
+			CodexModel:          codexModel,
+			CodexReasoning:      codexReasoning,
+			PythonBin:           pythonBin,
+			WorkDir:             workDir,
+			HTTPClient:          attachmentHTTPClient,
+			UntrustedHTTPClient: untrustedAttachmentHTTPClient,
+			TrustedHosts:        trustedAttachmentHosts,
 		})
 		p := tea.NewProgram(app)
 
@@ -102,4 +138,24 @@ var tuiCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func zendeskAttachmentHosts(subdomain string) []string {
+	return []string{
+		subdomain + ".zendesk.com",
+		".zdusercontent.com",
+		".zendeskusercontent.com",
+	}
+}
+
+func nonAuthAttachmentHTTPClient(source *http.Client) *http.Client {
+	timeout := 30 * time.Second
+	if source != nil && source.Timeout > 0 {
+		timeout = source.Timeout
+	}
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	return &http.Client{
+		Transport: &api.RetryTransport{Base: base, MaxRetries: 3},
+		Timeout:   timeout,
+	}
 }

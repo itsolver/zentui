@@ -26,6 +26,13 @@ echo '{"status":"success","kind":"draft","ticket_id":"123","mode":"public","sche
 	assert.JSONEq(t, `{"type":"object"}`, string(pack.Schema))
 }
 
+func TestBuildDraftPromptPackRequiresCustomerSupportDir(t *testing.T) {
+	_, err := BuildDraftPromptPack(context.Background(), "", "", 123, "public", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "customer-support directory is required")
+}
+
 func TestNormalizeDraftPromptPackResultUsesHelper(t *testing.T) {
 	dir := t.TempDir()
 	helper := filepath.Join(dir, "fake-helper")

@@ -100,14 +100,21 @@ func ExecuteRequesterCleanup(ctx context.Context, users zendesk.UserService, pla
 }
 
 func ensurePhoneIdentity(ctx context.Context, users zendesk.UserService, userID int64, phone string) (string, error) {
-	page, err := users.ListIdentities(ctx, userID, &types.ListUserIdentitiesOptions{Types: []string{"phone_number", "phone"}})
-	if err != nil {
-		return "", err
-	}
-	for _, identity := range page.Identities {
-		if PhoneIdentityMatches(identity, phone) {
-			return "already_present", nil
+	cursor := ""
+	for {
+		page, err := users.ListIdentities(ctx, userID, &types.ListUserIdentitiesOptions{Limit: 100, Cursor: cursor, Types: []string{"phone_number", "phone"}})
+		if err != nil {
+			return "", err
 		}
+		for _, identity := range page.Identities {
+			if PhoneIdentityMatches(identity, phone) {
+				return "already_present", nil
+			}
+		}
+		if page.Meta.AfterCursor == "" || page.Meta.AfterCursor == cursor {
+			break
+		}
+		cursor = page.Meta.AfterCursor
 	}
 	verified := true
 	if _, err := users.CreateIdentity(ctx, userID, &types.CreateUserIdentityRequest{Type: "phone_number", Value: phone, Verified: &verified}); err != nil {
