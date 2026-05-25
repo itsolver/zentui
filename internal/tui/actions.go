@@ -19,7 +19,8 @@ import (
 )
 
 type ticketUpdatedMsg struct {
-	ticket *types.Ticket
+	ticket  *types.Ticket
+	warning error
 }
 
 type actionErrMsg struct{ err error }
@@ -299,18 +300,22 @@ func (m actionsModel) submitMerge() tea.Cmd {
 		if err != nil {
 			return actionErrMsg{err: err}
 		}
+		updatedTicket := result.Ticket
+		if updatedTicket == nil {
+			updatedTicket = &types.Ticket{ID: targetID}
+		}
 		sourceUser := findUser(sourceResult.Users, sourceResult.Ticket.RequesterID)
 		targetUser := findUser(targetResult.Users, targetResult.Ticket.RequesterID)
 		cleanupPlan := triage.BuildRequesterCleanupPlan(sourceResult.Ticket, audits.Audits, sourceUser, targetResult.Ticket, targetUser)
 		if cleanupEnabled {
 			if _, err := triage.ExecuteRequesterCleanup(ctx, users, cleanupPlan); err != nil {
-				return actionErrMsg{err: fmt.Errorf("ticket merged into #%d, but requester cleanup failed: %w", targetID, err)}
+				return ticketUpdatedMsg{
+					ticket:  updatedTicket,
+					warning: fmt.Errorf("requester cleanup failed after ticket merge into #%d: %w", targetID, err),
+				}
 			}
 		}
-		if result.Ticket != nil {
-			return ticketUpdatedMsg{ticket: result.Ticket}
-		}
-		return ticketUpdatedMsg{ticket: &types.Ticket{ID: targetID}}
+		return ticketUpdatedMsg{ticket: updatedTicket}
 	}
 }
 

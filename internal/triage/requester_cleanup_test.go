@@ -68,7 +68,7 @@ func TestExecuteRequesterCleanupMergesUserAndCreatesPhoneIdentity(t *testing.T) 
 func TestExecuteRequesterCleanupChecksIdentityPagesBeforeCreate(t *testing.T) {
 	svc := &cleanupUserService{
 		identityPages: []types.UserIdentityPage{
-			{Meta: types.PageMeta{HasMore: true, AfterCursor: "page-2"}},
+			{Meta: types.PageMeta{AfterCursor: "page-2"}},
 			{Identities: []types.UserIdentity{{Type: "phone_number", Value: "+61 439 651 141"}}},
 		},
 	}

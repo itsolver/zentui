@@ -28,8 +28,9 @@ const (
 var inlineURLRe = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 type WorkCache struct {
-	Root       string
-	HTTPClient *http.Client
+	Root         string
+	HTTPClient   *http.Client
+	TrustedHosts []string
 }
 
 type ImageSource struct {
@@ -205,10 +206,7 @@ func (c WorkCache) DownloadImage(ctx context.Context, ticketID int64, source Ima
 		return asset, c.addAsset(ticketID, asset)
 	}
 
-	client := c.HTTPClient
-	if client == nil {
-		client = http.DefaultClient
-	}
+	client := c.clientForSource(source.URL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, source.URL, nil)
 	if err != nil {
 		return AssetRecord{}, err
@@ -362,6 +360,28 @@ func (c WorkCache) addAsset(ticketID int64, asset AssetRecord) error {
 	}
 	manifest.Assets = append(manifest.Assets, asset)
 	return c.WriteManifest(ticketID, manifest)
+}
+
+func (c WorkCache) clientForSource(raw string) *http.Client {
+	if c.HTTPClient == nil {
+		return http.DefaultClient
+	}
+	if len(c.TrustedHosts) == 0 {
+		return c.HTTPClient
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil {
+		return http.DefaultClient
+	}
+	host := strings.ToLower(parsed.Host)
+	hostname := strings.ToLower(parsed.Hostname())
+	for _, trusted := range c.TrustedHosts {
+		trusted = strings.ToLower(strings.TrimSpace(trusted))
+		if host == trusted || hostname == trusted {
+			return c.HTTPClient
+		}
+	}
+	return http.DefaultClient
 }
 
 func skippedAsset(source ImageSource, reason string) AssetRecord {

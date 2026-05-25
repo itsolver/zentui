@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -74,6 +75,7 @@ var tuiCmd = &cobra.Command{
 		var ticketSvc zendesk.TicketService
 		var searchSvc zendesk.SearchService
 		var userSvc zendesk.UserService
+		var attachmentHTTPClient *http.Client
 		if store := demoStoreFromCtx(cmd.Context()); store != nil {
 			ticketSvc = demo.NewTicketService(store)
 			searchSvc = demo.NewSearchService(store)
@@ -86,6 +88,7 @@ var tuiCmd = &cobra.Command{
 			ticketSvc = api.NewTicketService(client)
 			searchSvc = api.NewSearchService(client)
 			userSvc = api.NewUserService(client)
+			attachmentHTTPClient = client.HTTPClient
 			c := cache.New(60 * time.Second)
 			ticketSvc = cache.NewCachedTicketService(ticketSvc, c)
 			searchSvc = cache.NewCachedSearchService(searchSvc, c)
@@ -98,6 +101,10 @@ var tuiCmd = &cobra.Command{
 			if creds, _ := auth.ResolveCredentials(profile); creds != nil {
 				subdomain = creds.Subdomain
 			}
+		}
+		var trustedAttachmentHosts []string
+		if subdomain != "" {
+			trustedAttachmentHosts = []string{subdomain + ".zendesk.com"}
 		}
 
 		viewID, _ := cmd.Flags().GetInt64("view-id")
@@ -118,6 +125,8 @@ var tuiCmd = &cobra.Command{
 			CodexReasoning:     codexReasoning,
 			PythonBin:          pythonBin,
 			WorkDir:            workDir,
+			HTTPClient:         attachmentHTTPClient,
+			TrustedHosts:       trustedAttachmentHosts,
 		})
 		p := tea.NewProgram(app)
 

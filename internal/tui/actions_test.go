@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -24,6 +25,25 @@ func TestSubmitMergeRunsRequesterCleanupAfterTicketMerge(t *testing.T) {
 	_, ok := msg.(ticketUpdatedMsg)
 	require.True(t, ok, "expected ticketUpdatedMsg, got %T", msg)
 	assert.Equal(t, []string{"ticket_merge", "user_merge", "identity_create"}, calls)
+}
+
+func TestSubmitMergeReturnsTicketUpdateWhenRequesterCleanupFails(t *testing.T) {
+	var calls []string
+	tickets := &mergeOrderTicketService{calls: &calls}
+	users := &mergeOrderUserService{calls: &calls, mergeErr: errors.New("permission denied")}
+	model := newActionsModel(tickets, users)
+	model.sourceTicketID = 1
+	model.mergeCleanupEnabled = true
+	model.textarea.SetValue("2")
+
+	msg := model.submitMerge()()
+
+	updated, ok := msg.(ticketUpdatedMsg)
+	require.True(t, ok, "expected ticketUpdatedMsg, got %T", msg)
+	require.NotNil(t, updated.warning)
+	assert.Contains(t, updated.warning.Error(), "requester cleanup failed after ticket merge")
+	assert.Equal(t, int64(2), updated.ticket.ID)
+	assert.Equal(t, []string{"ticket_merge", "user_merge"}, calls)
 }
 
 type mergeOrderTicketService struct {
@@ -93,7 +113,8 @@ func (s *mergeOrderTicketService) MergeTickets(context.Context, int64, *types.Me
 }
 
 type mergeOrderUserService struct {
-	calls *[]string
+	calls    *[]string
+	mergeErr error
 }
 
 func (s *mergeOrderUserService) GetMe(context.Context) (*types.User, error) { return nil, nil }
@@ -112,5 +133,8 @@ func (s *mergeOrderUserService) CreateIdentity(context.Context, int64, *types.Cr
 }
 func (s *mergeOrderUserService) MergeEndUser(context.Context, int64, int64) (*types.JobStatus, error) {
 	*s.calls = append(*s.calls, "user_merge")
+	if s.mergeErr != nil {
+		return nil, s.mergeErr
+	}
 	return &types.JobStatus{Status: "completed"}, nil
 }

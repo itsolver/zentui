@@ -111,7 +111,7 @@ func ensurePhoneIdentity(ctx context.Context, users zendesk.UserService, userID 
 				return "already_present", nil
 			}
 		}
-		if !page.Meta.HasMore || page.Meta.AfterCursor == "" {
+		if page.Meta.AfterCursor == "" || page.Meta.AfterCursor == cursor {
 			break
 		}
 		cursor = page.Meta.AfterCursor
