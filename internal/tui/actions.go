@@ -291,14 +291,6 @@ func (m actionsModel) submitMerge() tea.Cmd {
 		if err != nil {
 			return actionErrMsg{err: err}
 		}
-		sourceUser := findUser(sourceResult.Users, sourceResult.Ticket.RequesterID)
-		targetUser := findUser(targetResult.Users, targetResult.Ticket.RequesterID)
-		cleanupPlan := triage.BuildRequesterCleanupPlan(sourceResult.Ticket, audits.Audits, sourceUser, targetResult.Ticket, targetUser)
-		if cleanupEnabled {
-			if _, err := triage.ExecuteRequesterCleanup(ctx, users, cleanupPlan); err != nil {
-				return actionErrMsg{err: err}
-			}
-		}
 		result, err := tickets.MergeTickets(ctx, targetID, &types.MergeTicketsRequest{
 			IDs:           []int64{sourceID},
 			SourceComment: fmt.Sprintf("Closing as merged into #%d.", targetID),
@@ -306,6 +298,14 @@ func (m actionsModel) submitMerge() tea.Cmd {
 		})
 		if err != nil {
 			return actionErrMsg{err: err}
+		}
+		sourceUser := findUser(sourceResult.Users, sourceResult.Ticket.RequesterID)
+		targetUser := findUser(targetResult.Users, targetResult.Ticket.RequesterID)
+		cleanupPlan := triage.BuildRequesterCleanupPlan(sourceResult.Ticket, audits.Audits, sourceUser, targetResult.Ticket, targetUser)
+		if cleanupEnabled {
+			if _, err := triage.ExecuteRequesterCleanup(ctx, users, cleanupPlan); err != nil {
+				return actionErrMsg{err: fmt.Errorf("ticket merged into #%d, but requester cleanup failed: %w", targetID, err)}
+			}
 		}
 		if result.Ticket != nil {
 			return ticketUpdatedMsg{ticket: result.Ticket}

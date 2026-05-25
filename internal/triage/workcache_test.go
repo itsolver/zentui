@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -93,6 +95,39 @@ func TestDownloadImageSkipsUnsupportedContentType(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, asset.Skipped)
 	assert.Equal(t, "unsupported content type", asset.SkipReason)
+}
+
+func TestDownloadImageReusesSkippedURL(t *testing.T) {
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Write([]byte("pdf"))
+	}))
+	defer server.Close()
+
+	cache := WorkCache{Root: t.TempDir(), HTTPClient: server.Client()}
+	source := ImageSource{URL: server.URL + "/file.pdf", Filename: "file.pdf"}
+
+	first, err := cache.DownloadImage(context.Background(), 123, source)
+	require.NoError(t, err)
+	second, err := cache.DownloadImage(context.Background(), 123, source)
+	require.NoError(t, err)
+
+	assert.True(t, first.Skipped)
+	assert.Equal(t, first, second)
+	assert.Equal(t, int32(1), requests.Load())
+
+	manifest, err := cache.ReadManifest(123)
+	require.NoError(t, err)
+	require.Len(t, manifest.Assets, 1)
+}
+
+func TestSafeFilenameHandlesOversizedExtension(t *testing.T) {
+	name := safeFilename("screen." + strings.Repeat("x", 200))
+
+	assert.NotEmpty(t, name)
+	assert.LessOrEqual(t, len(name), 120)
 }
 
 func TestImageAnalysisReadWrite(t *testing.T) {

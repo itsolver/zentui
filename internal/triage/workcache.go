@@ -195,7 +195,7 @@ func (c WorkCache) DownloadImage(ctx context.Context, ticketID int64, source Ima
 		return AssetRecord{}, err
 	}
 	for _, asset := range manifest.Assets {
-		if asset.SourceURL == source.URL && !asset.Skipped {
+		if asset.SourceURL == source.URL {
 			return asset, nil
 		}
 	}
@@ -410,8 +410,12 @@ func safeFilename(name string) string {
 	name = strings.Trim(name, ". ")
 	if len(name) > 120 {
 		ext := filepath.Ext(name)
-		name = strings.TrimSuffix(name, ext)
-		name = name[:120-len(ext)] + ext
+		if len(ext) >= 120 {
+			name = name[:120]
+		} else {
+			base := strings.TrimSuffix(name, ext)
+			name = base[:120-len(ext)] + ext
+		}
 	}
 	return name
 }

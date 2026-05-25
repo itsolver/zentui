@@ -65,7 +65,28 @@ func TestExecuteRequesterCleanupMergesUserAndCreatesPhoneIdentity(t *testing.T) 
 	assert.Equal(t, "+61439651141", svc.createdPhone)
 }
 
-func TestExecuteRequesterCleanupFailsBeforeTicketMergeOnRequesterMergeError(t *testing.T) {
+func TestExecuteRequesterCleanupChecksIdentityPagesBeforeCreate(t *testing.T) {
+	svc := &cleanupUserService{
+		identityPages: []types.UserIdentityPage{
+			{Meta: types.PageMeta{HasMore: true, AfterCursor: "page-2"}},
+			{Identities: []types.UserIdentity{{Type: "phone_number", Value: "+61 439 651 141"}}},
+		},
+	}
+	result, err := ExecuteRequesterCleanup(context.Background(), svc, RequesterCleanupPlan{
+		Eligible:    true,
+		PhoneNumber: "+61439651141",
+		SourceUser:  UserSummary{ID: 10},
+		TargetUser:  UserSummary{ID: 20},
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "complete", result.Status)
+	assert.Equal(t, "already_present", result.IdentityStatus)
+	assert.Empty(t, svc.createdPhone)
+	assert.Equal(t, []string{"", "page-2"}, svc.identityCursors)
+}
+
+func TestExecuteRequesterCleanupFailsOnRequesterMergeError(t *testing.T) {
 	svc := &cleanupUserService{mergeErr: errors.New("boom")}
 	result, err := ExecuteRequesterCleanup(context.Background(), svc, RequesterCleanupPlan{
 		Eligible:    true,
@@ -81,10 +102,12 @@ func TestExecuteRequesterCleanupFailsBeforeTicketMergeOnRequesterMergeError(t *t
 }
 
 type cleanupUserService struct {
-	mergedSource int64
-	mergedTarget int64
-	createdPhone string
-	mergeErr     error
+	mergedSource    int64
+	mergedTarget    int64
+	createdPhone    string
+	mergeErr        error
+	identityPages   []types.UserIdentityPage
+	identityCursors []string
 }
 
 func (s *cleanupUserService) GetMe(context.Context) (*types.User, error)      { return nil, nil }
@@ -92,7 +115,15 @@ func (s *cleanupUserService) Get(context.Context, int64) (*types.User, error) { 
 func (s *cleanupUserService) AutocompleteUsers(context.Context, string) ([]types.User, error) {
 	return nil, nil
 }
-func (s *cleanupUserService) ListIdentities(context.Context, int64, *types.ListUserIdentitiesOptions) (*types.UserIdentityPage, error) {
+func (s *cleanupUserService) ListIdentities(_ context.Context, _ int64, opts *types.ListUserIdentitiesOptions) (*types.UserIdentityPage, error) {
+	if opts != nil {
+		s.identityCursors = append(s.identityCursors, opts.Cursor)
+	}
+	if len(s.identityPages) > 0 {
+		page := s.identityPages[0]
+		s.identityPages = s.identityPages[1:]
+		return &page, nil
+	}
 	return &types.UserIdentityPage{}, nil
 }
 func (s *cleanupUserService) CreateIdentity(_ context.Context, _ int64, req *types.CreateUserIdentityRequest) (*types.UserIdentity, error) {

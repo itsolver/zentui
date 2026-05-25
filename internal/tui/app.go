@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -108,7 +107,6 @@ type AppOptions struct {
 	CodexReasoning     string
 	PythonBin          string
 	WorkDir            string
-	HTTPClient         *http.Client
 }
 
 func NewApp(tickets zendesk.TicketService, search zendesk.SearchService, users zendesk.UserService, subdomain, version string) App {
@@ -140,7 +138,7 @@ func NewAppWithOptions(tickets zendesk.TicketService, search zendesk.SearchServi
 		gotoM:      newGotoModel(),
 		cmdPalette: newCmdPaletteModel(),
 		codex:      codex,
-		workCache:  triage.WorkCache{Root: opts.WorkDir, HTTPClient: opts.HTTPClient},
+		workCache:  triage.WorkCache{Root: opts.WorkDir},
 		pythonBin:  opts.PythonBin,
 	}
 }
