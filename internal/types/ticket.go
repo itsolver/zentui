@@ -142,8 +142,9 @@ type UpdateTicketRequest struct {
 }
 
 type TicketResult struct {
-	Ticket Ticket `json:"ticket"`
-	Users  []User `json:"users,omitempty"`
+	Ticket        Ticket         `json:"ticket"`
+	Users         []User         `json:"users,omitempty"`
+	Organizations []Organization `json:"organizations,omitempty"`
 }
 
 type ListTicketsOptions struct {
@@ -159,4 +160,16 @@ type ListTicketsOptions struct {
 
 type GetTicketOptions struct {
 	Include string
+}
+
+type MergeTicketsRequest struct {
+	IDs           []int64 `json:"ids"`
+	SourceComment string  `json:"source_comment,omitempty"`
+	TargetComment string  `json:"target_comment,omitempty"`
+}
+
+type MergeTicketsResult struct {
+	Ticket    *Ticket    `json:"ticket,omitempty"`
+	Tickets   []Ticket   `json:"tickets,omitempty"`
+	JobStatus *JobStatus `json:"job_status,omitempty"`
 }

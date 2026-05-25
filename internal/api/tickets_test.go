@@ -315,3 +315,104 @@ func TestTicketService_List_Pagination(t *testing.T) {
 	require.NoError(t, err)
 	assert.False(t, p2.Meta.HasMore, "expected has_more false on second page")
 }
+
+func TestTicketService_ListView_WithPaginationAndIncludes(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "GET", r.Method)
+		assert.Equal(t, "/api/v2/views/7484423111055/tickets", r.URL.Path)
+		assert.Equal(t, "20", r.URL.Query().Get("page[size]"))
+		assert.Equal(t, "cursor1", r.URL.Query().Get("page[after]"))
+		assert.Equal(t, "users,organizations", r.URL.Query().Get("include"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"tickets":[{"id":1,"subject":"Triage","status":"open","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z"}],
+			"users":[{"id":10,"name":"Requester","email":"r@example.com"}],
+			"organizations":[{"id":20,"name":"Acme"}],
+			"meta":{"has_more":true,"after_cursor":"cursor2"}
+		}`))
+	})
+
+	client := testClient(t, handler)
+	svc := NewTicketService(client)
+
+	page, err := svc.ListView(context.Background(), 7484423111055, &types.ListTicketsOptions{
+		Limit:   20,
+		Cursor:  "cursor1",
+		Include: "users,organizations",
+	})
+	require.NoError(t, err)
+	require.Len(t, page.Tickets, 1)
+	require.Len(t, page.Users, 1)
+	require.Len(t, page.Organizations, 1)
+	assert.Equal(t, "cursor2", page.Meta.AfterCursor)
+}
+
+func TestTicketService_ListView_RateLimitError(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "30")
+		w.WriteHeader(429)
+		w.Write([]byte(`{"error":"TooManyRequests"}`))
+	})
+
+	client := testClient(t, handler)
+	svc := NewTicketService(client)
+
+	_, err := svc.ListView(context.Background(), 1, nil)
+	require.Error(t, err)
+
+	appErr, ok := err.(*types.AppError)
+	require.True(t, ok, "expected AppError, got %T", err)
+	assert.Equal(t, types.ExitRetryable, appErr.ExitCode)
+}
+
+func TestTicketService_ListTicketFields(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v2/ticket_fields", r.URL.Path)
+		assert.Equal(t, "100", r.URL.Query().Get("page[size]"))
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{
+			"ticket_fields":[
+				{"id":5398029717519,"title":"Time spent last update","type":"integer","active":true},
+				{"id":42,"title":"Category","type":"tagger","active":true,"custom_field_options":[{"id":1,"name":"Printer","value":"printer"}]}
+			],
+			"meta":{"has_more":false}
+		}`))
+	})
+
+	client := testClient(t, handler)
+	svc := NewTicketService(client)
+
+	page, err := svc.ListTicketFields(context.Background(), &types.ListTicketFieldsOptions{Limit: 100})
+	require.NoError(t, err)
+	require.Len(t, page.TicketFields, 2)
+	assert.Equal(t, "Time spent last update", page.TicketFields[0].Title)
+	assert.Equal(t, "Printer", page.TicketFields[1].CustomFieldOptions[0].Name)
+}
+
+func TestTicketService_MergeTickets(t *testing.T) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "POST", r.Method)
+		assert.Equal(t, "/api/v2/tickets/100/merge", r.URL.Path)
+
+		var body types.MergeTicketsRequest
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(t, []int64{101, 102}, body.IDs)
+		assert.Equal(t, "Closing duplicate.", body.SourceComment)
+		assert.Equal(t, "Merged duplicates.", body.TargetComment)
+
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"ticket":{"id":100,"subject":"Survivor","status":"open","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z"}}`))
+	})
+
+	client := testClient(t, handler)
+	svc := NewTicketService(client)
+
+	result, err := svc.MergeTickets(context.Background(), 100, &types.MergeTicketsRequest{
+		IDs:           []int64{101, 102},
+		SourceComment: "Closing duplicate.",
+		TargetComment: "Merged duplicates.",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result.Ticket)
+	assert.Equal(t, int64(100), result.Ticket.ID)
+}

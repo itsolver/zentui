@@ -42,6 +42,10 @@ func (m *mockTicketService) List(_ context.Context, opts *types.ListTicketsOptio
 	}, nil
 }
 
+func (m *mockTicketService) ListView(_ context.Context, viewID int64, opts *types.ListTicketsOptions) (*types.TicketPage, error) {
+	return m.List(context.Background(), opts)
+}
+
 func (m *mockTicketService) Get(_ context.Context, id int64, opts *types.GetTicketOptions) (*types.TicketResult, error) {
 	m.getOpts = opts
 	if len(m.tickets) > 0 {
@@ -82,6 +86,15 @@ func (m *mockTicketService) ListComments(_ context.Context, ticketID int64, opts
 
 func (m *mockTicketService) ListAudits(_ context.Context, ticketID int64, opts *types.ListAuditsOptions) (*types.AuditPage, error) {
 	return &types.AuditPage{}, nil
+}
+
+func (m *mockTicketService) ListTicketFields(_ context.Context, opts *types.ListTicketFieldsOptions) (*types.TicketFieldPage, error) {
+	return &types.TicketFieldPage{}, nil
+}
+
+func (m *mockTicketService) MergeTickets(_ context.Context, targetID int64, req *types.MergeTicketsRequest) (*types.MergeTicketsResult, error) {
+	ticket := types.Ticket{ID: targetID}
+	return &types.MergeTicketsResult{Ticket: &ticket}, nil
 }
 
 type mockSearchService struct {
