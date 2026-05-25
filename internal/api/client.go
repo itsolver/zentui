@@ -12,9 +12,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/johanviberg/zd/internal/auth"
-	"github.com/johanviberg/zd/internal/config"
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/auth"
+	"github.com/itsolver/zentui/internal/config"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 type Client struct {

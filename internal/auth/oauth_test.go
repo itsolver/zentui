@@ -134,6 +134,21 @@ func TestRefreshAccessToken(t *testing.T) {
 	assert.NotNil(t, result.ExpiresAt)
 }
 
+func TestRefreshTokenValuesIncludesClientSecret(t *testing.T) {
+	data := refreshTokenValues("my-client", "client-secret", "old-refresh")
+
+	assert.Equal(t, "refresh_token", data.Get("grant_type"))
+	assert.Equal(t, "old-refresh", data.Get("refresh_token"))
+	assert.Equal(t, "my-client", data.Get("client_id"))
+	assert.Equal(t, "client-secret", data.Get("client_secret"))
+}
+
+func TestRefreshTokenValuesOmitsEmptyClientSecret(t *testing.T) {
+	data := refreshTokenValues("my-client", "", "old-refresh")
+
+	assert.Empty(t, data.Get("client_secret"))
+}
+
 func TestGenerateState(t *testing.T) {
 	state, err := generateState()
 	require.NoError(t, err, "generateState")

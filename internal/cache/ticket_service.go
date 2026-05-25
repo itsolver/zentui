@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/johanviberg/zd/internal/types"
-	"github.com/johanviberg/zd/pkg/zendesk"
+	"github.com/itsolver/zentui/internal/types"
+	"github.com/itsolver/zentui/pkg/zendesk"
 )
 
 // CachedTicketService wraps a zendesk.TicketService with a TTL cache.
@@ -61,6 +61,25 @@ func (s *CachedTicketService) List(ctx context.Context, opts *types.ListTicketsO
 	return result, nil
 }
 
+func (s *CachedTicketService) ListView(ctx context.Context, viewID int64, opts *types.ListTicketsOptions) (*types.TicketPage, error) {
+	if opts == nil {
+		opts = &types.ListTicketsOptions{}
+	}
+	key := fmt.Sprintf("ticket:view:%d:%d:%s:%s",
+		viewID, opts.Limit, opts.Cursor, opts.Include)
+
+	if v, ok := s.cache.Get(key); ok {
+		return v.(*types.TicketPage), nil
+	}
+
+	result, err := s.delegate.ListView(ctx, viewID, opts)
+	if err != nil {
+		return nil, err
+	}
+	s.cache.Set(key, result)
+	return result, nil
+}
+
 func (s *CachedTicketService) ListAudits(ctx context.Context, ticketID int64, opts *types.ListAuditsOptions) (*types.AuditPage, error) {
 	sortOrder, cursor, include := "", "", ""
 	limit := 0
@@ -107,6 +126,26 @@ func (s *CachedTicketService) ListComments(ctx context.Context, ticketID int64, 
 	return result, nil
 }
 
+func (s *CachedTicketService) ListTicketFields(ctx context.Context, opts *types.ListTicketFieldsOptions) (*types.TicketFieldPage, error) {
+	limit, cursor := 0, ""
+	if opts != nil {
+		limit = opts.Limit
+		cursor = opts.Cursor
+	}
+	key := fmt.Sprintf("ticket:fields:%d:%s", limit, cursor)
+
+	if v, ok := s.cache.Get(key); ok {
+		return v.(*types.TicketFieldPage), nil
+	}
+
+	result, err := s.delegate.ListTicketFields(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	s.cache.Set(key, result)
+	return result, nil
+}
+
 func (s *CachedTicketService) Create(ctx context.Context, req *types.CreateTicketRequest) (*types.Ticket, error) {
 	result, err := s.delegate.Create(ctx, req)
 	if err != nil {
@@ -126,8 +165,34 @@ func (s *CachedTicketService) Update(ctx context.Context, id int64, req *types.U
 		fmt.Sprintf("ticket:audits:%d:", id),
 		fmt.Sprintf("ticket:comments:%d:", id),
 		"ticket:list:",
+		"ticket:view:",
 		"search:",
 	)
+	return result, nil
+}
+
+func (s *CachedTicketService) MergeTickets(ctx context.Context, targetID int64, req *types.MergeTicketsRequest) (*types.MergeTicketsResult, error) {
+	result, err := s.delegate.MergeTickets(ctx, targetID, req)
+	if err != nil {
+		return nil, err
+	}
+
+	prefixes := []string{
+		fmt.Sprintf("ticket:get:%d:", targetID),
+		fmt.Sprintf("ticket:audits:%d:", targetID),
+		fmt.Sprintf("ticket:comments:%d:", targetID),
+		"ticket:list:",
+		"ticket:view:",
+		"search:",
+	}
+	for _, id := range req.IDs {
+		prefixes = append(prefixes,
+			fmt.Sprintf("ticket:get:%d:", id),
+			fmt.Sprintf("ticket:audits:%d:", id),
+			fmt.Sprintf("ticket:comments:%d:", id),
+		)
+	}
+	s.cache.Invalidate(prefixes...)
 	return result, nil
 }
 
@@ -141,6 +206,7 @@ func (s *CachedTicketService) Delete(ctx context.Context, id int64) error {
 		fmt.Sprintf("ticket:audits:%d:", id),
 		fmt.Sprintf("ticket:comments:%d:", id),
 		"ticket:list:",
+		"ticket:view:",
 		"search:",
 	)
 	return nil

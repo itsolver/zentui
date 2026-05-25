@@ -6,7 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/johanviberg/zd/internal/auth"
+	"github.com/itsolver/zentui/internal/auth"
 )
 
 func init() {

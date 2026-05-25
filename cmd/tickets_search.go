@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/johanviberg/zd/internal/nlq"
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/nlq"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 func init() {
@@ -41,20 +41,20 @@ Query parameters:
   organization: organization name
 
 Combine with spaces (AND) or "OR":
-  zd tickets search "status:open priority:high"
-  zd tickets search "status:open OR status:pending"
-  zd tickets search "tags:vip assignee:jane"
-  zd tickets search "created>2024-01-01 status:open"
+  zentui tickets search "status:open priority:high"
+  zentui tickets search "status:open OR status:pending"
+  zentui tickets search "tags:vip assignee:jane"
+  zentui tickets search "created>2024-01-01 status:open"
 
 Full reference: https://support.zendesk.com/hc/en-us/articles/4408886879258
 
 Natural language is also supported:
-  zd tickets search "show all open tickets"
-  zd tickets search "urgent tickets assigned to jane"
-  zd tickets search "high priority incidents"
-  zd tickets search "unresolved tickets from billing"
-  zd tickets search "tickets created this week"
-  zd tickets search "open tickets past 3 hours"`,
+  zentui tickets search "show all open tickets"
+  zentui tickets search "urgent tickets assigned to jane"
+  zentui tickets search "high priority incidents"
+  zentui tickets search "unresolved tickets from billing"
+  zentui tickets search "tickets created this week"
+  zentui tickets search "open tickets past 3 hours"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := nlq.Translate(args[0])

@@ -7,10 +7,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/johanviberg/zd/internal/nlq"
-	"github.com/johanviberg/zd/internal/permissions"
-	"github.com/johanviberg/zd/internal/types"
-	"github.com/johanviberg/zd/pkg/zendesk"
+	"github.com/itsolver/zentui/internal/nlq"
+	"github.com/itsolver/zentui/internal/permissions"
+	"github.com/itsolver/zentui/internal/types"
+	"github.com/itsolver/zentui/pkg/zendesk"
 )
 
 func parseCollaboratorsFromStrings(values []string) []types.CollaboratorEntry {

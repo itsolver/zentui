@@ -30,6 +30,10 @@ type keyMap struct {
 	AddCC          key.Binding
 	MyTickets      key.Binding
 	FilterTimeline key.Binding
+	Draft          key.Binding
+	Merge          key.Binding
+	PauseTimer     key.Binding
+	ResetTimer     key.Binding
 }
 
 var keys = keyMap{
@@ -140,5 +144,21 @@ var keys = keyMap{
 	FilterTimeline: key.NewBinding(
 		key.WithKeys("f"),
 		key.WithHelp("f", "filter"),
+	),
+	Draft: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "draft"),
+	),
+	Merge: key.NewBinding(
+		key.WithKeys("M"),
+		key.WithHelp("M", "merge"),
+	),
+	PauseTimer: key.NewBinding(
+		key.WithKeys("P"),
+		key.WithHelp("P", "pause timer"),
+	),
+	ResetTimer: key.NewBinding(
+		key.WithKeys("0"),
+		key.WithHelp("0", "reset timer"),
 	),
 }

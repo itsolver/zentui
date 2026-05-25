@@ -1,4 +1,4 @@
-module github.com/johanviberg/zd
+module github.com/itsolver/zentui
 
 go 1.25.8
 

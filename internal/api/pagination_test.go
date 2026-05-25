@@ -3,7 +3,7 @@ package api
 import (
 	"testing"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 	"github.com/stretchr/testify/assert"
 )
 

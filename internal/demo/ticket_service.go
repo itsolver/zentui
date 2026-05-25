@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 type TicketService struct {
@@ -90,6 +90,10 @@ func (s *TicketService) List(ctx context.Context, opts *types.ListTicketsOptions
 	}
 
 	return result, nil
+}
+
+func (s *TicketService) ListView(ctx context.Context, viewID int64, opts *types.ListTicketsOptions) (*types.TicketPage, error) {
+	return s.List(ctx, opts)
 }
 
 func (s *TicketService) Get(ctx context.Context, id int64, opts *types.GetTicketOptions) (*types.TicketResult, error) {
@@ -332,6 +336,27 @@ func (s *TicketService) ListAudits(ctx context.Context, ticketID int64, opts *ty
 	}
 
 	return result, nil
+}
+
+func (s *TicketService) ListTicketFields(ctx context.Context, opts *types.ListTicketFieldsOptions) (*types.TicketFieldPage, error) {
+	return &types.TicketFieldPage{TicketFields: []types.TicketField{}}, nil
+}
+
+func (s *TicketService) MergeTickets(ctx context.Context, targetID int64, req *types.MergeTicketsRequest) (*types.MergeTicketsResult, error) {
+	s.store.mu.Lock()
+	defer s.store.mu.Unlock()
+
+	target, ok := s.store.Tickets[targetID]
+	if !ok {
+		return nil, types.NewNotFoundError(fmt.Sprintf("ticket %d not found", targetID))
+	}
+	for _, sourceID := range req.IDs {
+		if _, ok := s.store.Tickets[sourceID]; !ok {
+			return nil, types.NewNotFoundError(fmt.Sprintf("ticket %d not found", sourceID))
+		}
+		delete(s.store.Tickets, sourceID)
+	}
+	return &types.MergeTicketsResult{Ticket: &target}, nil
 }
 
 func sortTickets(tickets []types.Ticket, field, order string) {

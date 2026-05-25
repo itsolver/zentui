@@ -8,7 +8,7 @@ import (
 	"net/url"
 	"strconv"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 type TicketService struct {
@@ -21,6 +21,35 @@ func NewTicketService(client *Client) *TicketService {
 
 func (s *TicketService) List(ctx context.Context, opts *types.ListTicketsOptions) (*types.TicketPage, error) {
 	path := "/api/v2/tickets"
+	params := ticketListParams(opts)
+
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var page types.TicketPage
+	if err := s.client.doJSON(ctx, "GET", path, nil, &page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+func (s *TicketService) ListView(ctx context.Context, viewID int64, opts *types.ListTicketsOptions) (*types.TicketPage, error) {
+	path := fmt.Sprintf("/api/v2/views/%d/tickets", viewID)
+	params := ticketListParams(opts)
+
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var page types.TicketPage
+	if err := s.client.doJSON(ctx, "GET", path, nil, &page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+func ticketListParams(opts *types.ListTicketsOptions) url.Values {
 	params := url.Values{}
 
 	if opts != nil {
@@ -54,15 +83,7 @@ func (s *TicketService) List(ctx context.Context, opts *types.ListTicketsOptions
 		}
 	}
 
-	if len(params) > 0 {
-		path += "?" + params.Encode()
-	}
-
-	var page types.TicketPage
-	if err := s.client.doJSON(ctx, "GET", path, nil, &page); err != nil {
-		return nil, err
-	}
-	return &page, nil
+	return params
 }
 
 func (s *TicketService) Get(ctx context.Context, id int64, opts *types.GetTicketOptions) (*types.TicketResult, error) {
@@ -184,6 +205,45 @@ func (s *TicketService) ListAudits(ctx context.Context, ticketID int64, opts *ty
 		return nil, err
 	}
 	return &page, nil
+}
+
+func (s *TicketService) ListTicketFields(ctx context.Context, opts *types.ListTicketFieldsOptions) (*types.TicketFieldPage, error) {
+	path := "/api/v2/ticket_fields"
+	params := url.Values{}
+
+	if opts != nil {
+		if opts.Limit > 0 {
+			params.Set("page[size]", strconv.Itoa(opts.Limit))
+		}
+		if opts.Cursor != "" {
+			params.Set("page[after]", opts.Cursor)
+		}
+	}
+
+	if len(params) > 0 {
+		path += "?" + params.Encode()
+	}
+
+	var page types.TicketFieldPage
+	if err := s.client.doJSON(ctx, "GET", path, nil, &page); err != nil {
+		return nil, err
+	}
+	return &page, nil
+}
+
+func (s *TicketService) MergeTickets(ctx context.Context, targetID int64, req *types.MergeTicketsRequest) (*types.MergeTicketsResult, error) {
+	bodyBytes, err := json.Marshal(req)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling request: %w", err)
+	}
+
+	path := fmt.Sprintf("/api/v2/tickets/%d/merge", targetID)
+
+	var result types.MergeTicketsResult
+	if err := s.client.doJSON(ctx, "POST", path, bytes.NewReader(bodyBytes), &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (s *TicketService) Delete(ctx context.Context, id int64) error {

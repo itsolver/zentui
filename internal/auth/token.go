@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/johanviberg/zd/internal/config"
+	"github.com/itsolver/zentui/internal/config"
 )
 
 type Credentials struct {
@@ -17,14 +17,15 @@ type Credentials struct {
 }
 
 type ProfileCredentials struct {
-	Method         string     `json:"method"`
-	Subdomain      string     `json:"subdomain"`
-	Email          string     `json:"email,omitempty"`
-	APIToken       string     `json:"api_token,omitempty"`
-	OAuthToken     string     `json:"oauth_token,omitempty"`
-	OAuthClientID  string     `json:"oauth_client_id,omitempty"`
-	RefreshToken   string     `json:"refresh_token,omitempty"`
-	TokenExpiresAt *time.Time `json:"token_expires_at,omitempty"`
+	Method            string     `json:"method"`
+	Subdomain         string     `json:"subdomain"`
+	Email             string     `json:"email,omitempty"`
+	APIToken          string     `json:"api_token,omitempty"`
+	OAuthToken        string     `json:"oauth_token,omitempty"`
+	OAuthClientID     string     `json:"oauth_client_id,omitempty"`
+	OAuthClientSecret string     `json:"oauth_client_secret,omitempty"`
+	RefreshToken      string     `json:"refresh_token,omitempty"`
+	TokenExpiresAt    *time.Time `json:"token_expires_at,omitempty"`
 }
 
 // IsTokenExpired returns true if the OAuth token is within 60 seconds of expiry.

@@ -11,13 +11,14 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/johanviberg/zd/internal/types"
-	"github.com/johanviberg/zd/pkg/zendesk"
+	"github.com/itsolver/zentui/internal/types"
+	"github.com/itsolver/zentui/pkg/zendesk"
 )
 
 type ticketLoadedMsg struct {
-	ticket types.Ticket
-	users  []types.User
+	ticket        types.Ticket
+	users         []types.User
+	organizations []types.Organization
 }
 
 type auditsLoadedMsg struct {
@@ -60,12 +61,12 @@ func newDetailModel(tickets zendesk.TicketService) detailModel {
 func (m detailModel) loadTicket(id int64) tea.Cmd {
 	return func() tea.Msg {
 		result, err := m.tickets.Get(context.Background(), id, &types.GetTicketOptions{
-			Include: "users",
+			Include: "users,organizations",
 		})
 		if err != nil {
 			return errMsg{err}
 		}
-		return ticketLoadedMsg{ticket: result.Ticket, users: result.Users}
+		return ticketLoadedMsg{ticket: result.Ticket, users: result.Users, organizations: result.Organizations}
 	}
 }
 

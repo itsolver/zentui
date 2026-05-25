@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	zdeditor "github.com/johanviberg/zd/internal/editor"
-	"github.com/johanviberg/zd/internal/types"
+	zdeditor "github.com/itsolver/zentui/internal/editor"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 func init() {
@@ -84,6 +84,9 @@ var ticketsCreateCmd = &cobra.Command{
 		requesterName, _ := cmd.Flags().GetString("requester-name")
 		idempotencyKey, _ := cmd.Flags().GetString("idempotency-key")
 		ifExists, _ := cmd.Flags().GetString("if-exists")
+		if err := validateIfExists(ifExists); err != nil {
+			return err
+		}
 
 		customFields, err := parseCustomFields(customFieldStrs)
 		if err != nil {
@@ -186,5 +189,14 @@ func parseCustomFields(strs []string) ([]types.CustomField, error) {
 
 func idempotencyTag(key string) string {
 	hash := sha256.Sum256([]byte(key))
-	return fmt.Sprintf("zd-idempotent-%x", hash[:8])
+	return fmt.Sprintf("zentui-idempotent-%x", hash[:8])
+}
+
+func validateIfExists(value string) error {
+	switch value {
+	case "skip", "update", "error":
+		return nil
+	default:
+		return fmt.Errorf("invalid --if-exists value %q (use skip, update, or error)", value)
+	}
 }

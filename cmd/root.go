@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	"github.com/johanviberg/zd/internal/config"
-	"github.com/johanviberg/zd/internal/demo"
-	"github.com/johanviberg/zd/internal/output"
-	"github.com/johanviberg/zd/internal/permissions"
+	"github.com/itsolver/zentui/internal/config"
+	"github.com/itsolver/zentui/internal/demo"
+	"github.com/itsolver/zentui/internal/output"
+	"github.com/itsolver/zentui/internal/permissions"
 )
 
 type contextKey string
@@ -24,7 +24,7 @@ const (
 )
 
 var rootCmd = &cobra.Command{
-	Use:           "zd",
+	Use:           "zentui",
 	Short:         "Zendesk CLI - AI agent-friendly command-line interface for Zendesk",
 	Long:          "A CLI tool for interacting with Zendesk's ticketing REST API, designed for both human users and AI agents.",
 	SilenceUsage:  true,

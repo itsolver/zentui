@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	zdeditor "github.com/johanviberg/zd/internal/editor"
-	"github.com/johanviberg/zd/internal/types"
+	zdeditor "github.com/itsolver/zentui/internal/editor"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 func parseCollaborators(values []string) []types.CollaboratorEntry {

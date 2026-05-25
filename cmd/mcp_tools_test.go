@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/johanviberg/zd/internal/permissions"
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/permissions"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 // --- Mock services ---
@@ -40,6 +40,10 @@ func (m *mockTicketService) List(_ context.Context, opts *types.ListTicketsOptio
 		Users:   m.users,
 		Meta:    m.listMeta,
 	}, nil
+}
+
+func (m *mockTicketService) ListView(_ context.Context, viewID int64, opts *types.ListTicketsOptions) (*types.TicketPage, error) {
+	return m.List(context.Background(), opts)
 }
 
 func (m *mockTicketService) Get(_ context.Context, id int64, opts *types.GetTicketOptions) (*types.TicketResult, error) {
@@ -82,6 +86,15 @@ func (m *mockTicketService) ListComments(_ context.Context, ticketID int64, opts
 
 func (m *mockTicketService) ListAudits(_ context.Context, ticketID int64, opts *types.ListAuditsOptions) (*types.AuditPage, error) {
 	return &types.AuditPage{}, nil
+}
+
+func (m *mockTicketService) ListTicketFields(_ context.Context, opts *types.ListTicketFieldsOptions) (*types.TicketFieldPage, error) {
+	return &types.TicketFieldPage{}, nil
+}
+
+func (m *mockTicketService) MergeTickets(_ context.Context, targetID int64, req *types.MergeTicketsRequest) (*types.MergeTicketsResult, error) {
+	ticket := types.Ticket{ID: targetID}
+	return &types.MergeTicketsResult{Ticket: &ticket}, nil
 }
 
 type mockSearchService struct {
@@ -141,7 +154,7 @@ func setupMCPServer(t *testing.T, ticketSvc *mockTicketService, searchSvc *mockS
 	t.Helper()
 
 	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "zd-test",
+		Name:    "zentui-test",
 		Version: "test",
 	}, nil)
 
@@ -160,7 +173,7 @@ func setupMCPServer(t *testing.T, ticketSvc *mockTicketService, searchSvc *mockS
 	require.NoError(t, err)
 
 	client := mcp.NewClient(&mcp.Implementation{
-		Name:    "zd-test-client",
+		Name:    "zentui-test-client",
 		Version: "test",
 	}, nil)
 	cs, err := client.Connect(context.Background(), ct, nil)

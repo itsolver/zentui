@@ -8,13 +8,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/johanviberg/zd/internal/api"
-	"github.com/johanviberg/zd/internal/auth"
-	"github.com/johanviberg/zd/internal/browser"
-	"github.com/johanviberg/zd/internal/demo"
-	"github.com/johanviberg/zd/internal/permissions"
-	"github.com/johanviberg/zd/internal/types"
-	"github.com/johanviberg/zd/pkg/zendesk"
+	"github.com/itsolver/zentui/internal/api"
+	"github.com/itsolver/zentui/internal/auth"
+	"github.com/itsolver/zentui/internal/browser"
+	"github.com/itsolver/zentui/internal/demo"
+	"github.com/itsolver/zentui/internal/permissions"
+	"github.com/itsolver/zentui/internal/types"
+	"github.com/itsolver/zentui/pkg/zendesk"
 )
 
 func init() {
@@ -37,7 +37,7 @@ func buildClient(cmd *cobra.Command) (*api.Client, error) {
 		return nil, err
 	}
 	if creds == nil {
-		return nil, types.NewAuthError("not authenticated — run 'zd auth login' first")
+		return nil, types.NewAuthError("not authenticated — run 'zentui auth login' first")
 	}
 
 	subdomain := cfg.Subdomain

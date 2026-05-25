@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/johanviberg/zd/internal/types"
-	"github.com/johanviberg/zd/pkg/zendesk"
+	"github.com/itsolver/zentui/internal/types"
+	"github.com/itsolver/zentui/pkg/zendesk"
 )
 
 // CachedSearchService wraps a zendesk.SearchService with a TTL cache.

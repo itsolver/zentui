@@ -30,7 +30,7 @@ func TestSaveAndLoadCredentials(t *testing.T) {
 	require.NoError(t, err, "SaveCredentials")
 
 	// Verify file permissions (Unix only; Windows always reports 0666)
-	path := filepath.Join(tmpDir, "zd", "credentials.json")
+	path := filepath.Join(tmpDir, "zentui", "credentials.json")
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(path)
 		require.NoError(t, err, "stat credentials")
@@ -106,7 +106,7 @@ func TestLoadCredentials_SymlinkRejected(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	zdDir := filepath.Join(tmpDir, "zd")
+	zdDir := filepath.Join(tmpDir, "zentui")
 	os.MkdirAll(zdDir, 0700)
 
 	// Create a real credentials file
@@ -129,7 +129,7 @@ func TestLoadCredentials_InsecurePermissions(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	zdDir := filepath.Join(tmpDir, "zd")
+	zdDir := filepath.Join(tmpDir, "zentui")
 	os.MkdirAll(zdDir, 0700)
 
 	credPath := filepath.Join(zdDir, "credentials.json")
@@ -155,7 +155,7 @@ func TestSaveCredentials_AtomicWrite(t *testing.T) {
 	require.NoError(t, err, "SaveCredentials")
 
 	// Verify file permissions are 0600 (Unix only)
-	path := filepath.Join(tmpDir, "zd", "credentials.json")
+	path := filepath.Join(tmpDir, "zentui", "credentials.json")
 	if runtime.GOOS != "windows" {
 		info, err := os.Stat(path)
 		require.NoError(t, err, "stat")
@@ -163,7 +163,7 @@ func TestSaveCredentials_AtomicWrite(t *testing.T) {
 	}
 
 	// Verify no temp files left behind
-	entries, _ := os.ReadDir(filepath.Join(tmpDir, "zd"))
+	entries, _ := os.ReadDir(filepath.Join(tmpDir, "zentui"))
 	for _, e := range entries {
 		assert.False(t, strings.HasPrefix(e.Name(), ".credentials-"), "temp file left behind: %s", e.Name())
 	}
@@ -176,7 +176,7 @@ func TestSaveCredentials_SymlinkRejected(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	zdDir := filepath.Join(tmpDir, "zd")
+	zdDir := filepath.Join(tmpDir, "zentui")
 	os.MkdirAll(zdDir, 0700)
 
 	realPath := filepath.Join(tmpDir, "real-credentials.json")
@@ -243,7 +243,7 @@ func TestLoadCredentials_BackwardCompat_NoRefreshFields(t *testing.T) {
 	tmpDir := t.TempDir()
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 
-	zdDir := filepath.Join(tmpDir, "zd")
+	zdDir := filepath.Join(tmpDir, "zentui")
 	os.MkdirAll(zdDir, 0700)
 
 	// Old-format credentials without refresh_token or token_expires_at

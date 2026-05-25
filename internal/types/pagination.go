@@ -12,9 +12,10 @@ type PageLinks struct {
 }
 
 type TicketPage struct {
-	Tickets []Ticket  `json:"tickets"`
-	Users   []User    `json:"users,omitempty"`
-	Meta    PageMeta  `json:"meta"`
-	Links   PageLinks `json:"links"`
-	Count   int       `json:"count,omitempty"`
+	Tickets       []Ticket       `json:"tickets"`
+	Users         []User         `json:"users,omitempty"`
+	Organizations []Organization `json:"organizations,omitempty"`
+	Meta          PageMeta       `json:"meta"`
+	Links         PageLinks      `json:"links"`
+	Count         int            `json:"count,omitempty"`
 }

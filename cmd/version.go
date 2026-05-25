@@ -20,6 +20,6 @@ var versionCmd = &cobra.Command{
 	Use:   "version",
 	Short: "Print version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Fprintf(cmd.OutOrStdout(), "zd %s (commit: %s, built: %s)\n", buildVersion, buildCommit, buildDate)
+		fmt.Fprintf(cmd.OutOrStdout(), "zentui %s (commit: %s, built: %s)\n", buildVersion, buildCommit, buildDate)
 	},
 }

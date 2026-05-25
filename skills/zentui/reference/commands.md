@@ -1,6 +1,6 @@
 # Command Reference
 
-Complete reference for every `zd` command and flag. For the most up-to-date info, run `zd commands -o json`.
+Complete reference for every `zentui` command and flag. For the most up-to-date info, run `zentui commands -o json`.
 
 ## Global flags
 
@@ -20,7 +20,7 @@ These flags are available on all commands:
 
 ## auth
 
-### `zd auth login`
+### `zentui auth login`
 
 Authenticate with Zendesk.
 
@@ -37,22 +37,22 @@ Authenticate with Zendesk.
 **Token auth example:**
 
 ```bash
-zd auth login --method token --subdomain acme --email agent@acme.com --api-token TOKEN
+zentui auth login --method token --subdomain acme --email agent@acme.com --api-token TOKEN
 ```
 
 **OAuth example:**
 
 ```bash
-zd auth login --subdomain acme --client-id ID --client-secret SECRET
+zentui auth login --subdomain acme --client-id ID --client-secret SECRET
 ```
 
-### `zd auth logout`
+### `zentui auth logout`
 
 Remove stored credentials for the current profile.
 
 No additional flags.
 
-### `zd auth status`
+### `zentui auth status`
 
 Show authentication status. Returns profile, method, subdomain, and email.
 
@@ -60,7 +60,7 @@ No additional flags. Exit code 3 if not authenticated.
 
 ## tickets
 
-### `zd tickets list`
+### `zentui tickets list`
 
 List tickets with optional filtering.
 
@@ -80,11 +80,11 @@ List tickets with optional filtering.
 When `--include users` is used, columns change to: `id`, `status`, `priority`, `requester_name`, `assignee_name`, `subject`, `updated_at`. Enriched fields available for `--fields`: `requester_name`, `requester_email`, `assignee_name`, `assignee_email`.
 
 ```bash
-zd tickets list -o json --limit 50 --status open --sort-order asc
-zd tickets list -o json --include users --fields id,subject,requester_name,assignee_name
+zentui tickets list -o json --limit 50 --status open --sort-order asc
+zentui tickets list -o json --include users --fields id,subject,requester_name,assignee_name
 ```
 
-### `zd tickets show <id>`
+### `zentui tickets show <id>`
 
 Show a single ticket by ID.
 
@@ -97,11 +97,11 @@ Show a single ticket by ID.
 When `--include users` is used, output is enriched with `requester_name`, `requester_email`, `assignee_name`, `assignee_email`.
 
 ```bash
-zd tickets show 12345 -o json --include users
-zd tickets show 12345 -o json --include users --fields id,subject,requester_name,requester_email
+zentui tickets show 12345 -o json --include users
+zentui tickets show 12345 -o json --include users --fields id,subject,requester_name,requester_email
 ```
 
-### `zd tickets create`
+### `zentui tickets create`
 
 Create a new ticket.
 
@@ -122,10 +122,10 @@ Create a new ticket.
 | `--if-exists` | string | `error` | | When idempotent ticket exists: `skip`, `update`, `error` |
 
 ```bash
-zd tickets create -o json --subject "Bug report" --comment "Steps to reproduce..." --priority high --tags bug,frontend
+zentui tickets create -o json --subject "Bug report" --comment "Steps to reproduce..." --priority high --tags bug,frontend
 ```
 
-### `zd tickets update <id>`
+### `zentui tickets update <id>`
 
 Update an existing ticket. Only changed flags are sent.
 
@@ -148,10 +148,10 @@ Update an existing ticket. Only changed flags are sent.
 **Positional argument:** `id` (required) — ticket ID
 
 ```bash
-zd tickets update 12345 -o json --status pending --comment "Waiting on customer" --public=false
+zentui tickets update 12345 -o json --status pending --comment "Waiting on customer" --public=false
 ```
 
-### `zd tickets delete <id>`
+### `zentui tickets delete <id>`
 
 Delete a ticket with two-step safety confirmation.
 
@@ -165,14 +165,14 @@ Delete a ticket with two-step safety confirmation.
 
 ```bash
 # Safe two-step delete
-zd tickets delete 12345 -o json --dry-run
-zd tickets delete 12345 -o json --confirm abc123def456
+zentui tickets delete 12345 -o json --dry-run
+zentui tickets delete 12345 -o json --confirm abc123def456
 
 # Direct delete (skip confirmation)
-zd tickets delete 12345 -o json --yes
+zentui tickets delete 12345 -o json --yes
 ```
 
-### `zd tickets search <query>`
+### `zentui tickets search <query>`
 
 Search tickets using Zendesk search syntax.
 
@@ -192,11 +192,11 @@ Search tickets using Zendesk search syntax.
 When `--include users` is used, columns change to: `id`, `status`, `priority`, `requester_name`, `assignee_name`, `subject`, `updated_at`.
 
 ```bash
-zd tickets search "status:open priority:urgent" -o json --limit 50
-zd tickets search "status:open" -o json --include users
+zentui tickets search "status:open priority:urgent" -o json --limit 50
+zentui tickets search "status:open" -o json --include users
 ```
 
-### `zd tickets comments <id>`
+### `zentui tickets comments <id>`
 
 List comments on a ticket.
 
@@ -210,14 +210,14 @@ List comments on a ticket.
 **Positional argument:** `id` (required) — ticket ID
 
 ```bash
-zd tickets comments 12345 -o json
-zd tickets comments 12345 -o json --sort-order desc --limit 50
-zd tickets comments 12345 -o json --include users
+zentui tickets comments 12345 -o json
+zentui tickets comments 12345 -o json --sort-order desc --limit 50
+zentui tickets comments 12345 -o json --include users
 ```
 
 ## articles
 
-### `zd articles list`
+### `zentui articles list`
 
 List Help Center articles.
 
@@ -229,21 +229,21 @@ List Help Center articles.
 | `--sort-order` | string | `desc` | Sort order: `asc` or `desc` |
 
 ```bash
-zd articles list -o json
-zd articles list -o json --limit 50 --sort-by updated_at --sort-order asc
+zentui articles list -o json
+zentui articles list -o json --limit 50 --sort-by updated_at --sort-order asc
 ```
 
-### `zd articles show <id>`
+### `zentui articles show <id>`
 
 Show a single Help Center article by ID.
 
 **Positional argument:** `id` (required) — article ID
 
 ```bash
-zd articles show 360001234567 -o json
+zentui articles show 360001234567 -o json
 ```
 
-### `zd articles search <query>`
+### `zentui articles search <query>`
 
 Search Help Center articles.
 
@@ -255,39 +255,39 @@ Search Help Center articles.
 **Positional argument:** `query` (required) — search query string
 
 ```bash
-zd articles search "password reset" -o json
-zd articles search "billing" -o json --limit 10
+zentui articles search "password reset" -o json
+zentui articles search "billing" -o json --limit 10
 ```
 
 ## config
 
-### `zd config show`
+### `zentui config show`
 
 Show current configuration for the active profile.
 
 No additional flags.
 
-### `zd config set <key> <value>`
+### `zentui config set <key> <value>`
 
 Set a configuration value for the active profile.
 
 **Positional arguments:** `key` (required), `value` (required)
 
 ```bash
-zd config set subdomain acme --profile production
+zentui config set subdomain acme --profile production
 ```
 
 ## Utility commands
 
-### `zd commands`
+### `zentui commands`
 
 List all available commands with their flags. Use `-o json` for machine-readable output for agent discovery.
 
 ```bash
-zd commands -o json
+zentui commands -o json
 ```
 
-### `zd schema`
+### `zentui schema`
 
 Output JSON Schema for a command's input, for AI agent tool calling.
 
@@ -296,43 +296,43 @@ Output JSON Schema for a command's input, for AI agent tool calling.
 | `--command` | string | | **yes** | Command name (e.g., `tickets create`) |
 
 ```bash
-zd schema --command "tickets create"
-zd schema --command "tickets search"
+zentui schema --command "tickets create"
+zentui schema --command "tickets search"
 ```
 
-### `zd tui`
+### `zentui tui`
 
 Launch the interactive terminal UI for browsing and managing tickets.
 
 No additional flags (uses global flags like `--demo`, `--profile`).
 
 ```bash
-zd tui
-zd tui --demo
+zentui tui
+zentui tui --demo
 ```
 
-### `zd mcp serve`
+### `zentui mcp serve`
 
 Start an MCP (Model Context Protocol) server on stdio for AI agent integration.
 
 No additional flags. Uses the same authentication as the CLI.
 
 ```bash
-zd mcp serve
-zd mcp serve --demo
+zentui mcp serve
+zentui mcp serve --demo
 ```
 
-### `zd completion`
+### `zentui completion`
 
 Generate shell autocompletion scripts.
 
 Available subcommands: `bash`, `fish`, `powershell`, `zsh`.
 
 ```bash
-zd completion bash
-zd completion zsh
+zentui completion bash
+zentui completion zsh
 ```
 
-### `zd version`
+### `zentui version`
 
 Print version, commit hash, and build date.

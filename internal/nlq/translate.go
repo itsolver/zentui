@@ -10,7 +10,7 @@ import (
 
 // knownFields are Zendesk search fields used to detect existing query syntax.
 var knownFields = []string{
-	"status", "priority", "type", "assignee", "group", "requester",
+	"status", "priority", "type", "ticket_type", "assignee", "group", "requester",
 	"subject", "description", "tags", "organization", "created", "updated",
 }
 
@@ -100,7 +100,7 @@ func translateWithTime(query string, now time.Time) string {
 		} else if tok == "urgent" {
 			clauses = append(clauses, "priority:urgent")
 		} else if v, ok := typeKeywords[tok]; ok {
-			clauses = append(clauses, "type:"+v)
+			clauses = append(clauses, "ticket_type:"+v)
 		} else if tok == "created" || tok == "updated" || tok == "hour" || tok == "hours" {
 			// Skip date-related words already consumed or standalone.
 			continue
@@ -277,7 +277,7 @@ func FormatExamples() string {
   "open tickets from billing"      → status:open group:billing
   "unresolved tickets"             → status<solved
   "tickets created this week"      → created>YYYY-MM-DD
-  "high priority incidents"        → priority:high type:incident
+  "high priority incidents"        → priority:high ticket_type:incident
 
 Zendesk syntax is also accepted directly:
   "status:open priority:high"      → passed through unchanged`)

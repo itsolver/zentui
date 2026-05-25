@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 type SearchService struct {

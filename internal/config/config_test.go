@@ -26,7 +26,7 @@ func TestLoad_FromFile(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 	t.Setenv("ZENDESK_SUBDOMAIN", "")
 
-	dir := filepath.Join(tmpDir, "zd")
+	dir := filepath.Join(tmpDir, "zentui")
 	os.MkdirAll(dir, 0700)
 
 	configYAML := `
@@ -48,7 +48,7 @@ func TestLoad_EnvOverride(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", tmpDir)
 	t.Setenv("ZENDESK_SUBDOMAIN", "env-override")
 
-	dir := filepath.Join(tmpDir, "zd")
+	dir := filepath.Join(tmpDir, "zentui")
 	os.MkdirAll(dir, 0700)
 	os.WriteFile(filepath.Join(dir, "config.yaml"), []byte(`
 profiles:

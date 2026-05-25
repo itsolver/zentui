@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -84,7 +85,9 @@ func generateSchema(cmd *cobra.Command) map[string]interface{} {
 		case "int", "int64":
 			prop["type"] = "integer"
 			if f.DefValue != "0" {
-				prop["default"] = f.DefValue
+				if v, err := strconv.ParseInt(f.DefValue, 10, 64); err == nil {
+					prop["default"] = v
+				}
 			}
 		case "bool":
 			prop["type"] = "boolean"
