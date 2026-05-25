@@ -125,7 +125,7 @@ func TestDownloadImageReusesSkippedURL(t *testing.T) {
 }
 
 func TestDownloadImageUsesAuthClientOnlyForTrustedHosts(t *testing.T) {
-	trusted := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	trusted := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "Bearer secret", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "image/png")
 		w.Write([]byte("png-data"))
@@ -141,7 +141,7 @@ func TestDownloadImageUsesAuthClientOnlyForTrustedHosts(t *testing.T) {
 	trustedURL := mustParseURL(t, trusted.URL)
 	cache := WorkCache{
 		Root:         t.TempDir(),
-		HTTPClient:   &http.Client{Transport: authHeaderTransport{base: http.DefaultTransport}},
+		HTTPClient:   &http.Client{Transport: authHeaderTransport{base: trusted.Client().Transport}},
 		TrustedHosts: []string{trustedURL.Host},
 	}
 
@@ -161,6 +161,17 @@ func TestWorkCacheTrustsZendeskContentHostSuffixes(t *testing.T) {
 
 	assert.Same(t, cache.HTTPClient, cache.clientForSource("https://attachments.zdusercontent.com/asset.png"))
 	assert.Same(t, untrusted, cache.clientForSource("https://notzdusercontent.com/asset.png"))
+	assert.Same(t, untrusted, cache.clientForSource("http://attachments.zdusercontent.com/asset.png"))
+}
+
+func TestWorkCacheRequiresTrustedHostsBeforeUsingAuthClient(t *testing.T) {
+	untrusted := &http.Client{Timeout: time.Second}
+	cache := WorkCache{
+		HTTPClient:          &http.Client{Transport: authHeaderTransport{base: http.DefaultTransport}},
+		UntrustedHTTPClient: untrusted,
+	}
+
+	assert.Same(t, untrusted, cache.clientForSource("https://attachments.zdusercontent.com/asset.png"))
 }
 
 func TestWorkCacheUsesBoundedDefaultUntrustedClient(t *testing.T) {

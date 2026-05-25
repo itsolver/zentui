@@ -367,11 +367,14 @@ func (c WorkCache) clientForSource(raw string) *http.Client {
 	if c.HTTPClient == nil {
 		return c.untrustedClient()
 	}
-	if len(c.TrustedHosts) == 0 {
-		return c.HTTPClient
-	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
+		return c.untrustedClient()
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return c.untrustedClient()
+	}
+	if len(c.TrustedHosts) == 0 {
 		return c.untrustedClient()
 	}
 	host := strings.ToLower(parsed.Host)

@@ -2,6 +2,7 @@ package demo
 
 import (
 	"context"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ func NewArticleService(store *Store) *ArticleService {
 
 func (s *ArticleService) List(ctx context.Context, opts *types.ListArticlesOptions) (*types.ArticlePage, error) {
 	articles := demoArticles()
+	sortArticles(articles, opts)
 	page, meta := paginateArticles(articles, listArticleLimitAndCursor(opts))
 	return &types.ArticlePage{
 		Articles: page,
@@ -71,6 +73,31 @@ func searchArticleLimitAndCursor(opts *types.SearchArticlesOptions) articlePageO
 	return articlePageOptions{limit: opts.Limit, cursor: opts.Cursor}
 }
 
+func sortArticles(articles []types.Article, opts *types.ListArticlesOptions) {
+	if opts == nil || opts.SortBy == "" {
+		return
+	}
+	desc := strings.EqualFold(opts.SortOrder, "desc")
+	less := func(i, j int) bool {
+		switch opts.SortBy {
+		case "created_at":
+			return articles[i].CreatedAt.Before(articles[j].CreatedAt)
+		case "updated_at":
+			return articles[i].UpdatedAt.Before(articles[j].UpdatedAt)
+		case "title":
+			return strings.ToLower(articles[i].Title) < strings.ToLower(articles[j].Title)
+		default:
+			return articles[i].ID < articles[j].ID
+		}
+	}
+	sort.SliceStable(articles, func(i, j int) bool {
+		if desc {
+			return less(j, i)
+		}
+		return less(i, j)
+	})
+}
+
 func paginateArticles(articles []types.Article, opts articlePageOptions) ([]types.Article, types.PageMeta) {
 	limit := 25
 	if opts.limit > 0 {
@@ -79,6 +106,9 @@ func paginateArticles(articles []types.Article, opts articlePageOptions) ([]type
 	offset := 0
 	if opts.cursor != "" {
 		offset = decodeCursor(opts.cursor)
+	}
+	if offset < 0 {
+		offset = 0
 	}
 	if offset > len(articles) {
 		offset = len(articles)
