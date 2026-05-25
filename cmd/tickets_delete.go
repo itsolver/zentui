@@ -72,7 +72,7 @@ var ticketsDeleteCmd = &cobra.Command{
 				"subject":         result.Ticket.Subject,
 				"status":          result.Ticket.Status,
 				"confirmation_id": confirmation,
-				"message":         fmt.Sprintf("Run 'zd tickets delete %d --confirm %s' to execute", id, confirmation),
+				"message":         fmt.Sprintf("Run 'zentui tickets delete %d --confirm %s' to execute", id, confirmation),
 			}
 			return formatter.Format(os.Stdout, dryRunResult)
 		}

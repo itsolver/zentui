@@ -15,16 +15,16 @@ func init() {
 var manCmd = &cobra.Command{
 	Use:    "man",
 	Short:  "Generate man pages",
-	Long:   "Generate man pages for zd and write them to the specified directory.",
+	Long:   "Generate man pages for zentui and write them to the specified directory.",
 	Hidden: true,
 	Args:   cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir, _ := cmd.Flags().GetString("dir")
 
 		header := &doc.GenManHeader{
-			Title:   "ZD",
+			Title:   "ZENTUI",
 			Section: "1",
-			Source:  fmt.Sprintf("zd %s", buildVersion),
+			Source:  fmt.Sprintf("zentui %s", buildVersion),
 			Manual:  "Zendesk CLI",
 		}
 

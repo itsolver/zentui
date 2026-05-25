@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/johanviberg/zd/internal/permissions"
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/permissions"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 // --- Mock services ---
@@ -141,7 +141,7 @@ func setupMCPServer(t *testing.T, ticketSvc *mockTicketService, searchSvc *mockS
 	t.Helper()
 
 	server := mcp.NewServer(&mcp.Implementation{
-		Name:    "zd-test",
+		Name:    "zentui-test",
 		Version: "test",
 	}, nil)
 
@@ -160,7 +160,7 @@ func setupMCPServer(t *testing.T, ticketSvc *mockTicketService, searchSvc *mockS
 	require.NoError(t, err)
 
 	client := mcp.NewClient(&mcp.Implementation{
-		Name:    "zd-test-client",
+		Name:    "zentui-test-client",
 		Version: "test",
 	}, nil)
 	cs, err := client.Connect(context.Background(), ct, nil)

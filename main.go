@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/johanviberg/zd/cmd"
+	"github.com/itsolver/zentui/cmd"
 )
 
 var (

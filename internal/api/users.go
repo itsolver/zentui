@@ -3,7 +3,7 @@ package api
 import (
 	"context"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 type UserService struct {

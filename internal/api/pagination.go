@@ -1,7 +1,7 @@
 package api
 
 import (
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 // HasNextPage checks if there are more pages to fetch.

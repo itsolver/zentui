@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/johanviberg/zd/internal/browser"
-	"github.com/johanviberg/zd/internal/config"
+	"github.com/itsolver/zentui/internal/browser"
+	"github.com/itsolver/zentui/internal/config"
 )
 
 type tokenResponse struct {

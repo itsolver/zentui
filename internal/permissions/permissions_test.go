@@ -3,7 +3,7 @@ package permissions
 import (
 	"testing"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 func intPtr(v int) *int { return &v }

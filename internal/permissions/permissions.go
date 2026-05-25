@@ -1,6 +1,6 @@
 package permissions
 
-import "github.com/johanviberg/zd/internal/types"
+import "github.com/itsolver/zentui/internal/types"
 
 const (
 	roleTypeLight = 1

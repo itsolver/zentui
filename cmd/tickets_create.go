@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	zdeditor "github.com/johanviberg/zd/internal/editor"
-	"github.com/johanviberg/zd/internal/types"
+	zdeditor "github.com/itsolver/zentui/internal/editor"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 func init() {
@@ -186,5 +186,5 @@ func parseCustomFields(strs []string) ([]types.CustomField, error) {
 
 func idempotencyTag(key string) string {
 	hash := sha256.Sum256([]byte(key))
-	return fmt.Sprintf("zd-idempotent-%x", hash[:8])
+	return fmt.Sprintf("zentui-idempotent-%x", hash[:8])
 }

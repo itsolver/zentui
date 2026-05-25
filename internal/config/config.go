@@ -43,9 +43,9 @@ func ValidateProfileName(profile string) error {
 
 func ConfigDir() string {
 	if dir := os.Getenv("XDG_CONFIG_HOME"); dir != "" {
-		return filepath.Join(dir, "zd")
+		return filepath.Join(dir, "zentui")
 	}
-	return filepath.Join(xdg.ConfigHome, "zd")
+	return filepath.Join(xdg.ConfigHome, "zentui")
 }
 
 func ConfigPath() string {

@@ -13,19 +13,19 @@ func init() {
 var completionCmd = &cobra.Command{
 	Use:   "completion [bash|zsh|fish|powershell]",
 	Short: "Generate shell completion scripts",
-	Long: `Generate shell completion scripts for zd.
+	Long: `Generate shell completion scripts for zentui.
 
 To load completions:
 
 Bash:
 
-  $ source <(zd completion bash)
+  $ source <(zentui completion bash)
 
   # To load completions for each session, execute once:
   # Linux:
-  $ zd completion bash > /etc/bash_completion.d/zd
+  $ zentui completion bash > /etc/bash_completion.d/zentui
   # macOS:
-  $ zd completion bash > $(brew --prefix)/etc/bash_completion.d/zd
+  $ zentui completion bash > $(brew --prefix)/etc/bash_completion.d/zentui
 
 Zsh:
 
@@ -35,23 +35,23 @@ Zsh:
   $ echo "autoload -U compinit; compinit" >> ~/.zshrc
 
   # To load completions for each session, execute once:
-  $ zd completion zsh > "${fpath[1]}/_zd"
+  $ zentui completion zsh > "${fpath[1]}/_zentui"
 
   # You will need to start a new shell for this setup to take effect.
 
 Fish:
 
-  $ zd completion fish | source
+  $ zentui completion fish | source
 
   # To load completions for each session, execute once:
-  $ zd completion fish > ~/.config/fish/completions/zd.fish
+  $ zentui completion fish > ~/.config/fish/completions/zentui.fish
 
 PowerShell:
 
-  PS> zd completion powershell | Out-String | Invoke-Expression
+  PS> zentui completion powershell | Out-String | Invoke-Expression
 
   # To load completions for every new session, run:
-  PS> zd completion powershell > zd.ps1
+  PS> zentui completion powershell > zentui.ps1
   # and source this file from your PowerShell profile.
 `,
 	DisableFlagsInUseLine: true,

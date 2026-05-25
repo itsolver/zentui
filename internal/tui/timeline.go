@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 // TimelineNode represents one visual node (one audit, possibly with grouped events).

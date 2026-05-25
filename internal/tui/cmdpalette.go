@@ -7,7 +7,7 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/johanviberg/zd/internal/permissions"
+	"github.com/itsolver/zentui/internal/permissions"
 	"github.com/sahilm/fuzzy"
 )
 

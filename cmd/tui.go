@@ -7,9 +7,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
-	"github.com/johanviberg/zd/internal/auth"
-	"github.com/johanviberg/zd/internal/cache"
-	"github.com/johanviberg/zd/internal/tui"
+	"github.com/itsolver/zentui/internal/auth"
+	"github.com/itsolver/zentui/internal/cache"
+	"github.com/itsolver/zentui/internal/tui"
 )
 
 func init() {

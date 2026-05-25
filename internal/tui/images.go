@@ -7,7 +7,7 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 // imageEntry represents a single image attachment with context.

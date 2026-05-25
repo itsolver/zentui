@@ -4,7 +4,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 
-	"github.com/johanviberg/zd/internal/permissions"
+	"github.com/itsolver/zentui/internal/permissions"
 )
 
 func init() {
@@ -49,7 +49,7 @@ var mcpServeCmd = &cobra.Command{
 		}
 
 		server := mcp.NewServer(&mcp.Implementation{
-			Name:    "zd",
+			Name:    "zentui",
 			Version: buildVersion,
 		}, nil)
 

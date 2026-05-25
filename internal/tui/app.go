@@ -12,10 +12,10 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/johanviberg/zd/internal/browser"
-	"github.com/johanviberg/zd/internal/permissions"
-	"github.com/johanviberg/zd/internal/types"
-	"github.com/johanviberg/zd/pkg/zendesk"
+	"github.com/itsolver/zentui/internal/browser"
+	"github.com/itsolver/zentui/internal/permissions"
+	"github.com/itsolver/zentui/internal/types"
+	"github.com/itsolver/zentui/pkg/zendesk"
 )
 
 type errMsg struct{ err error }
@@ -177,30 +177,30 @@ func (m App) windowTitle() string {
 			if len([]rune(subject)) > 50 {
 				subject = string([]rune(subject)[:50]) + "…"
 			}
-			return fmt.Sprintf("zd — #%d: %s", m.detail.ticket.ID, subject)
+			return fmt.Sprintf("zentui — #%d: %s", m.detail.ticket.ID, subject)
 		}
-		return "zd — Loading..."
+		return "zentui — Loading..."
 	case listView, splitView, kanbanView:
 		if m.list.loading {
-			return "zd — Loading..."
+			return "zentui — Loading..."
 		}
 		if len(m.list.items) == 0 {
-			return "zd — No tickets"
+			return "zentui — No tickets"
 		}
 		if m.list.searchQuery != "" {
 			q := m.list.searchQuery
 			if len([]rune(q)) > 40 {
 				q = string([]rune(q)[:40]) + "…"
 			}
-			return fmt.Sprintf("zd — Search: %q (%d results)", q, len(m.list.items))
+			return fmt.Sprintf("zentui — Search: %q (%d results)", q, len(m.list.items))
 		}
 		newCount := len(m.list.newTicketIDs)
 		if newCount > 0 {
-			return fmt.Sprintf("zd — %d tickets (%d new)", len(m.list.items), newCount)
+			return fmt.Sprintf("zentui — %d tickets (%d new)", len(m.list.items), newCount)
 		}
-		return fmt.Sprintf("zd — %d tickets", len(m.list.items))
+		return fmt.Sprintf("zentui — %d tickets", len(m.list.items))
 	}
-	return "zd"
+	return "zentui"
 }
 
 func (m App) updateWindowTitle() tea.Cmd {

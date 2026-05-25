@@ -46,7 +46,7 @@ func EditComment() (string, error) {
 // editWithTemplate writes template to a temp file, opens the user's $EDITOR,
 // waits for it to exit, reads back the file, and returns its contents.
 func editWithTemplate(template string) (string, error) {
-	f, err := os.CreateTemp("", "zd-*.md")
+	f, err := os.CreateTemp("", "zentui-*.md")
 	if err != nil {
 		return "", fmt.Errorf("creating temp file: %w", err)
 	}

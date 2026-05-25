@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Role-based feature gating — `zd` now detects the authenticated user's Zendesk role (admin, agent, light agent) via `/api/v2/users/me` and proactively hides or blocks features the user cannot use
+- Role-based feature gating — `zentui` now detects the authenticated user's Zendesk role (admin, agent, light agent) via `/api/v2/users/me` and proactively hides or blocks features the user cannot use
 - Light agent restrictions enforced across CLI, TUI, and MCP server: public comments, status changes, ticket assignment, CCs, and ticket deletion are blocked with clear error messages
 - TUI comment panel shows "Internal note only (light agent)" and hides the public/internal toggle and CC picker for light agents
 - TUI command palette and status key binding are hidden for light agents
@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `User` type now includes `role_type`, `restricted_agent`, and `custom_role_id` fields from the Zendesk API
 - Light agents' comments default to internal notes (CLI silently overrides `--public` default; MCP server sets `public: false`)
 - OAuth login flow returns structured `OAuthResult` (access token, refresh token, expiry) instead of a bare token string
-- Simplified agent onboarding — after an admin configures `subdomain` and `oauth_client_id` once, agents authenticate with just `zd auth login`
+- Simplified agent onboarding — after an admin configures `subdomain` and `oauth_client_id` once, agents authenticate with just `zentui auth login`
 
 ## [0.5.0] - 2026-03-13
 
@@ -52,19 +52,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Styled `zd` logo in TUI header
+- Styled `zentui` logo in TUI header
 - Newlines in ticket subjects no longer break list and kanban row rendering
 
 ## [0.4.8] - 2026-03-12
 
 ### Added
 
-- Shell completion command (`zd completion [bash|zsh|fish|powershell]`) with install instructions for each shell
-- Man page generation (`zd man`) using `cobra/doc` — hidden command used during release builds
+- Shell completion command (`zentui completion [bash|zsh|fish|powershell]`) with install instructions for each shell
+- Man page generation (`zentui man`) using `cobra/doc` — hidden command used during release builds
 - FreeBSD release binaries (amd64, arm64)
 - 386 and armv7 release binaries for Linux and Windows
 - APK packages for Alpine Linux
-- Scoop bucket for Windows (`scoop install zd`)
+- Scoop bucket for Windows (`scoop install zentui`)
 - Shell completions (bash/zsh/fish) bundled in release archives and installed via Homebrew/deb/rpm/apk
 - Man pages bundled in release archives and installed via Homebrew/deb/rpm/apk
 - CI build workflow running tests on Ubuntu, macOS, and Windows for every push and PR
@@ -154,7 +154,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Built-in MCP server (`zd mcp serve`)
+- Built-in MCP server (`zentui mcp serve`)
 
 ### Security
 
@@ -183,7 +183,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Interactive TUI mode via `zd tui`
+- Interactive TUI mode via `zentui tui`
 - Auto-refresh with countdown and manual refresh
 - User sideloading to ticket commands
 
@@ -193,18 +193,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial release — Zendesk CLI with ticket CRUD, search, auth (OAuth + API token), JSON/text/NDJSON output, field projection, retry with backoff, and profile support
 
-[Unreleased]: https://github.com/johanviberg/zd/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/johanviberg/zd/compare/v0.4.9...v0.5.0
-[0.4.9]: https://github.com/johanviberg/zd/compare/v0.4.8...v0.4.9
-[0.4.8]: https://github.com/johanviberg/zd/compare/v0.4.7...v0.4.8
-[0.4.7]: https://github.com/johanviberg/zd/compare/v0.4.6...v0.4.7
-[0.4.6]: https://github.com/johanviberg/zd/compare/v0.4.5...v0.4.6
-[0.4.5]: https://github.com/johanviberg/zd/compare/v0.4.4...v0.4.5
-[0.4.4]: https://github.com/johanviberg/zd/compare/v0.4.3...v0.4.4
-[0.4.3]: https://github.com/johanviberg/zd/compare/v0.4.2...v0.4.3
-[0.4.2]: https://github.com/johanviberg/zd/compare/v0.4.1...v0.4.2
-[0.4.1]: https://github.com/johanviberg/zd/compare/v0.4.0...v0.4.1
-[0.4.0]: https://github.com/johanviberg/zd/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/johanviberg/zd/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/johanviberg/zd/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/johanviberg/zd/releases/tag/v0.1.0
+[Unreleased]: https://github.com/itsolver/zentui/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/itsolver/zentui/compare/v0.4.9...v0.5.0
+[0.4.9]: https://github.com/itsolver/zentui/compare/v0.4.8...v0.4.9
+[0.4.8]: https://github.com/itsolver/zentui/compare/v0.4.7...v0.4.8
+[0.4.7]: https://github.com/itsolver/zentui/compare/v0.4.6...v0.4.7
+[0.4.6]: https://github.com/itsolver/zentui/compare/v0.4.5...v0.4.6
+[0.4.5]: https://github.com/itsolver/zentui/compare/v0.4.4...v0.4.5
+[0.4.4]: https://github.com/itsolver/zentui/compare/v0.4.3...v0.4.4
+[0.4.3]: https://github.com/itsolver/zentui/compare/v0.4.2...v0.4.3
+[0.4.2]: https://github.com/itsolver/zentui/compare/v0.4.1...v0.4.2
+[0.4.1]: https://github.com/itsolver/zentui/compare/v0.4.0...v0.4.1
+[0.4.0]: https://github.com/itsolver/zentui/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/itsolver/zentui/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/itsolver/zentui/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/itsolver/zentui/releases/tag/v0.1.0

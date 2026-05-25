@@ -3,10 +3,10 @@ package zendesk
 import (
 	"context"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
-//go:generate mockgen -destination=../../internal/mocks/mock_zendesk.go -package=mocks github.com/johanviberg/zd/pkg/zendesk TicketService,SearchService,UserService,ArticleService
+//go:generate mockgen -destination=../../internal/mocks/mock_zendesk.go -package=mocks github.com/itsolver/zentui/pkg/zendesk TicketService,SearchService,UserService,ArticleService
 
 type TicketService interface {
 	List(ctx context.Context, opts *types.ListTicketsOptions) (*types.TicketPage, error)

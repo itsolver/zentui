@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Build & Test
 
 ```bash
-go build -o zd                        # Build binary
+go build -o zentui                        # Build binary
 go test ./...                          # Run all tests
 go test ./internal/api/ -run TestName  # Run a single test
 go vet ./...                           # Lint
@@ -26,7 +26,7 @@ The lefthook pre-commit hook runs `go build`, `gofmt` check, `go vet`, and `go t
 
 ## Architecture
 
-Go CLI (`zd`) for Zendesk's ticketing REST API. Module: `github.com/johanviberg/zd`. Uses Cobra + Viper + XDG.
+Go CLI (`zentui`) for Zendesk's ticketing REST API. Module: `github.com/itsolver/zentui`. Uses Cobra + Viper + XDG.
 
 ### Request flow
 
@@ -54,7 +54,7 @@ RetryTransport (exponential backoff + jitter for 429/5xx, max 3 retries)
 
 ### Auth resolution order
 
-`auth.ResolveCredentials`: env vars (`ZENDESK_OAUTH_TOKEN` or `ZENDESK_EMAIL`+`ZENDESK_API_TOKEN`) → stored credentials file (`$XDG_CONFIG_HOME/zd/credentials.json`) by profile.
+`auth.ResolveCredentials`: env vars (`ZENDESK_OAUTH_TOKEN` or `ZENDESK_EMAIL`+`ZENDESK_API_TOKEN`) → stored credentials file (`$XDG_CONFIG_HOME/zentui/credentials.json`) by profile.
 
 ### Config
 
@@ -62,7 +62,7 @@ RetryTransport (exponential backoff + jitter for 429/5xx, max 3 retries)
 
 ### MCP server
 
-`cmd/mcp.go` + `cmd/mcp_tools.go` implement a built-in MCP server (`zd mcp serve`) using `modelcontextprotocol/go-sdk`. Tool input types use `jsonschema` struct tags for automatic schema generation. Tools reuse `newTicketService`/`newSearchService` from the command layer.
+`cmd/mcp.go` + `cmd/mcp_tools.go` implement a built-in MCP server (`zentui mcp serve`) using `modelcontextprotocol/go-sdk`. Tool input types use `jsonschema` struct tags for automatic schema generation. Tools reuse `newTicketService`/`newSearchService` from the command layer.
 
 ### TUI
 
@@ -98,8 +98,8 @@ Tests create an `httptest.Server` with inline handlers or fixture data, then con
 
 ## Agent discovery
 
-- `zd commands -o json` — full CLI surface with flags/types/defaults
-- `zd schema --command "tickets create"` — JSON Schema for tool calling
+- `zentui commands -o json` — full CLI surface with flags/types/defaults
+- `zentui schema --command "tickets create"` — JSON Schema for tool calling
 
 ## Output
 

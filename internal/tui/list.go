@@ -11,9 +11,9 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
-	"github.com/johanviberg/zd/internal/nlq"
-	"github.com/johanviberg/zd/internal/types"
-	"github.com/johanviberg/zd/pkg/zendesk"
+	"github.com/itsolver/zentui/internal/nlq"
+	"github.com/itsolver/zentui/internal/types"
+	"github.com/itsolver/zentui/pkg/zendesk"
 )
 
 type ticketsLoadedMsg struct {

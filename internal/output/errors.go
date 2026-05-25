@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 type ErrorResponse struct {

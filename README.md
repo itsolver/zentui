@@ -1,98 +1,85 @@
-# Zendesk CLI (`zd`)
+# Zendesk CLI (`zentui`)
 
-[![Release](https://img.shields.io/github/v/release/johanviberg/zd)](https://github.com/johanviberg/zd/releases/latest)
-[![Build](https://github.com/johanviberg/zd/actions/workflows/build.yml/badge.svg)](https://github.com/johanviberg/zd/actions/workflows/build.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/johanviberg/zd)](https://goreportcard.com/report/github.com/johanviberg/zd)
-[![Go Reference](https://pkg.go.dev/badge/github.com/johanviberg/zd.svg)](https://pkg.go.dev/github.com/johanviberg/zd)
-[![License: MIT](https://img.shields.io/github/license/johanviberg/zd)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/itsolver/zentui)](https://github.com/itsolver/zentui/releases/latest)
+[![Build](https://github.com/itsolver/zentui/actions/workflows/build.yml/badge.svg)](https://github.com/itsolver/zentui/actions/workflows/build.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/itsolver/zentui)](https://goreportcard.com/report/github.com/itsolver/zentui)
+[![Go Reference](https://pkg.go.dev/badge/github.com/itsolver/zentui.svg)](https://pkg.go.dev/github.com/itsolver/zentui)
+[![License: MIT](https://img.shields.io/github/license/itsolver/zentui)](LICENSE)
 
 An unofficial, agent-friendly command-line interface for Zendesk's ticketing REST API. Built for both humans and AI agents.
 
-![zd list view](zd-list.png)
+This fork is based on `johanviberg/zd` and keeps the original MIT license attribution while repurposing the operator app for IT Solver's focused Zendesk workflow.
 
-![zd kanban view](zd-kanban.png)
+![zentui list view](zentui-list.png)
+
+![zentui kanban view](zentui-kanban.png)
 
 ## What it does
 
-`zd` lets you manage Zendesk tickets from the terminal. List, search, create, update, and delete tickets with structured output that works well in scripts and AI agent workflows. It includes built-in discovery commands (`zd commands` and `zd schema`) that let AI agents introspect the CLI at runtime, so they can figure out what's available without hardcoded knowledge.
+`zentui` lets you manage Zendesk tickets from the terminal. List, search, create, update, and delete tickets with structured output that works well in scripts and AI agent workflows. It includes built-in discovery commands (`zentui commands` and `zentui schema`) that let AI agents introspect the CLI at runtime, so they can figure out what's available without hardcoded knowledge.
 
 ## Installation
-
-### Homebrew (macOS / Linux)
-
-```bash
-brew install johanviberg/tap/zd
-```
-
-This also installs shell completions and man pages.
-
-### Scoop (Windows)
-
-```bash
-scoop bucket add zd https://github.com/johanviberg/scoop-bucket
-scoop install zd
-```
 
 ### go install
 
 ```bash
-go install github.com/johanviberg/zd@latest
+go install github.com/itsolver/zentui@latest
 ```
 
 ### Linux (deb)
 
-Download the `.deb` package from the [latest release](https://github.com/johanviberg/zd/releases/latest):
+Download the `.deb` package from the [latest release](https://github.com/itsolver/zentui/releases/latest):
 
 ```bash
-sudo dpkg -i zd_*_linux_x86_64.deb
+sudo dpkg -i zentui_*_linux_x86_64.deb
 ```
 
 ### Linux (rpm)
 
 ```bash
-sudo rpm -i zd_*_linux_x86_64.rpm
+sudo rpm -i zentui_*_linux_x86_64.rpm
 ```
 
 ### Alpine Linux (apk)
 
 ```bash
-sudo apk add --allow-untrusted zd_*_linux_x86_64.apk
+sudo apk add --allow-untrusted zentui_*_linux_x86_64.apk
 ```
 
 ### Binary download
 
-Pre-built binaries are available for Linux, macOS, Windows, and FreeBSD on amd64, arm64, 386, and armv7. Download from the [latest release](https://github.com/johanviberg/zd/releases/latest) and place the `zd` binary on your `PATH`.
+Pre-built binaries are available for Linux, macOS, Windows, and FreeBSD on amd64, arm64, 386, and armv7. Download from the [latest release](https://github.com/itsolver/zentui/releases/latest) and place the `zentui` binary on your `PATH`.
 
 ### Build from source
 
 ```bash
-git clone https://github.com/johanviberg/zd.git
-cd zd
-go build -o zd
+git clone https://github.com/itsolver/zentui.git
+cd zentui
+go build -o zentui
 ```
 
 ## Shell completions
 
-If you installed via Homebrew, deb, rpm, or apk, completions are set up automatically. For other installation methods:
+If you installed from a package, completions are set up automatically. For other installation methods:
 
 ```bash
 # Bash
-zd completion bash > /etc/bash_completion.d/zd          # Linux
-zd completion bash > $(brew --prefix)/etc/bash_completion.d/zd  # macOS
+zentui completion bash > /etc/bash_completion.d/zentui          # Linux
+zentui completion bash > $(brew --prefix)/etc/bash_completion.d/zentui  # macOS
 
 # Zsh
-zd completion zsh > "${fpath[1]}/_zd"
+zentui completion zsh > "${fpath[1]}/_zentui"
 
 # Fish
-zd completion fish > ~/.config/fish/completions/zd.fish
+zentui completion fish > ~/.config/fish/completions/zentui.fish
 
 # PowerShell
-zd completion powershell > zd.ps1  # then source from your profile
+zentui completion powershell > zentui.ps1  # then source from your profile
 ```
 
 ## Authentication
 
-Choose **one** of the methods below. Do not mix methods — `zd` uses the first credentials it finds (environment variables take priority over stored credentials).
+Choose **one** of the methods below. Do not mix methods — `zentui` uses the first credentials it finds (environment variables take priority over stored credentials).
 
 ### OAuth (recommended)
 
@@ -102,7 +89,7 @@ OAuth is the recommended authentication method. It uses a browser-based consent 
 
 1. In Admin Center, go to **Apps and integrations → APIs → OAuth clients**, then click **Add OAuth client**.
 2. Fill in the fields:
-   - **Name** — e.g. `zd CLI` (shown to users on the consent screen)
+   - **Name** — e.g. `zentui CLI` (shown to users on the consent screen)
    - **Description** — optional
    - **Client kind** — select **Public** (recommended — no client secret needed, secured via PKCE). Select **Confidential** if your security policy requires a client secret.
    - **Redirect URLs** — enter `http://127.0.0.1/callback` (the CLI starts a local server on a random port; Zendesk matches on host and path, ignoring the port for localhost)
@@ -111,8 +98,8 @@ OAuth is the recommended authentication method. It uses a browser-based consent 
 #### 2. Configure the CLI (admin or first-time setup)
 
 ```bash
-zd config set subdomain mycompany
-zd config set oauth_client_id YOUR_CLIENT_ID
+zentui config set subdomain mycompany
+zentui config set oauth_client_id YOUR_CLIENT_ID
 ```
 
 This only needs to be done once per machine (or distribute the `config.yaml` file to your team).
@@ -120,7 +107,7 @@ This only needs to be done once per machine (or distribute the `config.yaml` fil
 #### 3. Log in
 
 ```bash
-zd auth login
+zentui auth login
 ```
 
 This opens a browser window for the OAuth consent flow. The CLI requests `read write` scopes. The access token and refresh token are stored locally. Subsequent API calls auto-refresh the token when it expires.
@@ -128,7 +115,7 @@ This opens a browser window for the OAuth consent flow. The CLI requests `read w
 If you're using a **confidential** OAuth client, pass the secret on login:
 
 ```bash
-zd auth login --client-secret YOUR_CLIENT_SECRET
+zentui auth login --client-secret YOUR_CLIENT_SECRET
 ```
 
 ### API token
@@ -136,7 +123,7 @@ zd auth login --client-secret YOUR_CLIENT_SECRET
 If you can't use OAuth (e.g. in headless environments or CI), you can authenticate with an API token instead:
 
 ```bash
-zd auth login --method token \
+zentui auth login --method token \
   --subdomain mycompany \
   --email you@example.com \
   --api-token YOUR_API_TOKEN
@@ -160,48 +147,48 @@ export ZENDESK_API_TOKEN=your_token
 ### Check auth status
 
 ```bash
-zd auth status
+zentui auth status
 ```
 
 ## Quick start
 
 ```bash
 # List recent tickets
-zd tickets list
+zentui tickets list
 
 # Show a specific ticket
-zd tickets show 12345
+zentui tickets show 12345
 
 # Create a ticket
-zd tickets create --subject "Printer broken" --comment "The office printer is not responding"
+zentui tickets create --subject "Printer broken" --comment "The office printer is not responding"
 
 # Update a ticket
-zd tickets update 12345 --status pending --comment "Waiting on vendor" --public=false
+zentui tickets update 12345 --status pending --comment "Waiting on vendor" --public=false
 
 # Search tickets
-zd tickets search "status:open priority:high"
+zentui tickets search "status:open priority:high"
 
 # Delete a ticket (requires confirmation)
-zd tickets delete 12345 --yes
+zentui tickets delete 12345 --yes
 ```
 
 ### Natural language search
 
-`zd tickets search` accepts natural language queries, which are locally translated to Zendesk search syntax (no API key needed). Queries already in Zendesk syntax pass through unchanged.
+`zentui tickets search` accepts natural language queries, which are locally translated to Zendesk search syntax (no API key needed). Queries already in Zendesk syntax pass through unchanged.
 
 ```bash
-zd tickets search "urgent tickets assigned to jane"
-zd tickets search "open tickets created this week"
+zentui tickets search "urgent tickets assigned to jane"
+zentui tickets search "open tickets created this week"
 ```
 
 ### Demo mode
 
-The `--demo` flag lets you explore `zd` without authentication. It generates 100+ synthetic tickets locally.
+The `--demo` flag lets you explore `zentui` without authentication. It generates 100+ synthetic tickets locally.
 
 ```bash
-zd tui --demo
-zd tickets list --demo
-zd tickets show 42 --demo
+zentui tui --demo
+zentui tickets list --demo
+zentui tickets show 42 --demo
 ```
 
 Works with `tickets list`, `tickets show`, `tickets search`, `tickets comments`, and `tui`.
@@ -210,20 +197,20 @@ Use `--demo-role` to simulate different Zendesk roles:
 
 ```bash
 # Experience the TUI as a light agent (internal notes only, no status changes)
-zd tui --demo --demo-role light_agent
+zentui tui --demo --demo-role light_agent
 
 # Test admin behavior
-zd tickets delete 1 --demo --demo-role admin --yes
+zentui tickets delete 1 --demo --demo-role admin --yes
 ```
 
 Valid roles: `agent` (default), `light_agent`, `admin`.
 
 ## Interactive TUI
 
-`zd` includes an optional interactive terminal UI for browsing and managing tickets. Launch it with:
+`zentui` includes an optional interactive terminal UI for browsing and managing tickets. Launch it with:
 
 ```bash
-zd tui
+zentui tui
 ```
 
 The TUI provides:
@@ -251,7 +238,7 @@ The TUI uses the same authentication and service layer as the CLI commands — n
 
 ## Role-based permissions
 
-`zd` detects the authenticated user's Zendesk role and automatically adapts the available features. This applies across CLI commands, the TUI, and the MCP server.
+`zentui` detects the authenticated user's Zendesk role and automatically adapts the available features. This applies across CLI commands, the TUI, and the MCP server.
 
 | Capability | Admin | Agent | Light Agent |
 |---|---|---|---|
@@ -269,7 +256,7 @@ Light agents are identified by the `role_type` field (value `1`) or the `restric
 - **TUI** — the public/internal toggle and CC picker are hidden. The status key binding (`s`) is disabled. The command palette hides unavailable actions.
 - **MCP server** — tool calls with restricted parameters return descriptive error messages instead of passing through to the Zendesk API.
 
-If the user's role cannot be determined (e.g. network error), `zd` assumes full permissions. The Zendesk API enforces restrictions server-side regardless.
+If the user's role cannot be determined (e.g. network error), `zentui` assumes full permissions. The Zendesk API enforces restrictions server-side regardless.
 
 ## Output formats
 
@@ -277,13 +264,13 @@ Use `--output` (or `-o`) to control how results are formatted:
 
 ```bash
 # Human-readable table (default)
-zd tickets list
+zentui tickets list
 
 # JSON
-zd tickets list -o json
+zentui tickets list -o json
 
 # Newline-delimited JSON (one object per line, good for piping)
-zd tickets list -o ndjson
+zentui tickets list -o ndjson
 ```
 
 ### Field projection
@@ -291,7 +278,7 @@ zd tickets list -o ndjson
 Use `--fields` to select specific fields:
 
 ```bash
-zd tickets list --fields id,status,subject -o json
+zentui tickets list --fields id,status,subject -o json
 ```
 
 ### Sideloading related records
@@ -300,13 +287,13 @@ Use `--include` to sideload related data (e.g. users) alongside tickets. This re
 
 ```bash
 # Show a ticket with requester and assignee names
-zd tickets show 12345 --include users
+zentui tickets show 12345 --include users
 
 # List tickets with user names in the table
-zd tickets list --include users
+zentui tickets list --include users
 
 # Combine with field projection
-zd tickets show 12345 --include users --fields id,subject,requester_name,assignee_name
+zentui tickets show 12345 --include users --fields id,subject,requester_name,assignee_name
 ```
 
 When users are sideloaded, the output is enriched with `requester_name`, `requester_email`, `assignee_name`, and `assignee_email` fields.
@@ -315,16 +302,16 @@ Errors always go to stderr. When using `--output json`, errors are also structur
 
 ## Using with AI agents
 
-`zd` is designed to be used by AI agents like Claude Code, Claude Desktop, Cursor, and Windsurf.
+`zentui` is designed to be used by AI agents like Claude Code, Claude Desktop, Cursor, and Windsurf.
 
 ### MCP server (recommended)
 
-`zd` includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server that exposes Zendesk operations as tools. No wrapper scripts or extra dependencies — it ships in the same binary.
+`zentui` includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) server that exposes Zendesk operations as tools. No wrapper scripts or extra dependencies — it ships in the same binary.
 
 #### Claude Code
 
 ```bash
-claude mcp add zendesk -- zd mcp serve
+claude mcp add zendesk -- zentui mcp serve
 ```
 
 #### Claude Desktop
@@ -335,7 +322,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 {
   "mcpServers": {
     "zendesk": {
-      "command": "zd",
+      "command": "zentui",
       "args": ["mcp", "serve"]
     }
   }
@@ -344,7 +331,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 #### Cursor / Windsurf
 
-Point at `zd mcp serve` in your editor's MCP settings. The server communicates over stdio.
+Point at `zentui mcp serve` in your editor's MCP settings. The server communicates over stdio.
 
 #### Available tools
 
@@ -357,38 +344,32 @@ Point at `zd mcp serve` in your editor's MCP settings. The server communicates o
 | `zendesk_update_ticket` | Update a ticket: add comments (public or internal), change status/priority, manage tags, add CCs |
 | `zendesk_delete_ticket` | Permanently delete a ticket |
 
-The MCP server uses the same authentication as the CLI — run `zd auth login` first. Demo mode works too: `zd mcp serve --demo`.
+The MCP server uses the same authentication as the CLI — run `zentui auth login` first. Demo mode works too: `zentui mcp serve --demo`.
 
 ### Agent skill
 
-`zd` also ships with an [agent skill](https://skills.sh/) for agents that prefer calling CLI commands directly. Install it with the [skills CLI](https://github.com/vercel-labs/skills):
-
-```bash
-npx skills add johanviberg/zd
-```
-
-This copies the skill into your agent's skills directory (e.g. `.claude/skills/` for Claude Code). Once installed, the agent can use `zd` without any additional setup in your project files.
+`zentui` also ships with an agent skill under `skills/zentui/` for agents that prefer calling CLI commands directly.
 
 ### Self-describing commands
 
-Two built-in commands make `zd` discoverable at runtime, even without the skill or MCP server:
+Two built-in commands make `zentui` discoverable at runtime, even without the skill or MCP server:
 
 #### Command discovery
 
-`zd commands` lists every available command with its flags, types, defaults, and argument names:
+`zentui commands` lists every available command with its flags, types, defaults, and argument names:
 
 ```bash
-zd commands -o json
+zentui commands -o json
 ```
 
 An agent can call this once to learn the full CLI surface.
 
 #### JSON Schema for tool calling
 
-`zd schema` generates a JSON Schema for any command's input, which maps directly to tool-calling conventions:
+`zentui schema` generates a JSON Schema for any command's input, which maps directly to tool-calling conventions:
 
 ```bash
-zd schema --command "tickets create"
+zentui schema --command "tickets create"
 ```
 
 This returns a schema with property types, required fields, and defaults that an agent can use to construct valid calls.
@@ -397,27 +378,27 @@ This returns a schema with property types, required fields, and defaults that an
 
 | Command | Description |
 |---|---|
-| `zd auth login` | Authenticate with Zendesk (OAuth or API token) |
-| `zd auth logout` | Remove stored credentials |
-| `zd auth status` | Show current authentication status |
-| `zd tickets list` | List tickets (supports `--include`) |
-| `zd tickets show <id>` | Show a ticket (supports `--include`) |
-| `zd tickets create` | Create a ticket |
-| `zd tickets update <id>` | Update a ticket (comment, status, priority, tags, CCs) |
-| `zd tickets delete <id>` | Delete a ticket |
-| `zd tickets search <query>` | Search tickets (supports `--include` and natural language) |
-| `zd tickets comments <id>` | List comments on a ticket (supports `--include`) |
-| `zd articles list` | List Help Center articles |
-| `zd articles show <id>` | Show a Help Center article |
-| `zd articles search <query>` | Search Help Center articles |
-| `zd mcp serve` | Start MCP server on stdio for AI agent integration |
-| `zd completion` | Generate shell autocompletion (bash, fish, powershell, zsh) |
-| `zd tui` | Interactive terminal UI for managing tickets |
-| `zd config show` | Show current configuration |
-| `zd config set <key> <value>` | Set a configuration value |
-| `zd commands` | List all commands with flags (for agent discovery) |
-| `zd schema --command "..."` | JSON Schema for a command's input |
-| `zd version` | Print version information |
+| `zentui auth login` | Authenticate with Zendesk (OAuth or API token) |
+| `zentui auth logout` | Remove stored credentials |
+| `zentui auth status` | Show current authentication status |
+| `zentui tickets list` | List tickets (supports `--include`) |
+| `zentui tickets show <id>` | Show a ticket (supports `--include`) |
+| `zentui tickets create` | Create a ticket |
+| `zentui tickets update <id>` | Update a ticket (comment, status, priority, tags, CCs) |
+| `zentui tickets delete <id>` | Delete a ticket |
+| `zentui tickets search <query>` | Search tickets (supports `--include` and natural language) |
+| `zentui tickets comments <id>` | List comments on a ticket (supports `--include`) |
+| `zentui articles list` | List Help Center articles |
+| `zentui articles show <id>` | Show a Help Center article |
+| `zentui articles search <query>` | Search Help Center articles |
+| `zentui mcp serve` | Start MCP server on stdio for AI agent integration |
+| `zentui completion` | Generate shell autocompletion (bash, fish, powershell, zsh) |
+| `zentui tui` | Interactive terminal UI for managing tickets |
+| `zentui config show` | Show current configuration |
+| `zentui config set <key> <value>` | Set a configuration value |
+| `zentui commands` | List all commands with flags (for agent discovery) |
+| `zentui schema --command "..."` | JSON Schema for a command's input |
+| `zentui version` | Print version information |
 
 ### Global flags
 
@@ -436,7 +417,7 @@ This returns a schema with property types, required fields, and defaults that an
 
 ## Configuration
 
-Config files live in `$XDG_CONFIG_HOME/zd/` (typically `~/.config/zd/`):
+Config files live in `$XDG_CONFIG_HOME/zentui/` (typically `~/.config/zentui/`):
 
 - `config.yaml` -- settings per profile
 - `credentials.json` -- stored auth tokens (file permissions: 0600)
@@ -447,18 +428,18 @@ You can maintain multiple Zendesk accounts using profiles:
 
 ```bash
 # Login to a second account
-zd auth login --profile staging --subdomain mycompany-staging --method token \
+zentui auth login --profile staging --subdomain mycompany-staging --method token \
   --email you@example.com --api-token STAGING_TOKEN
 
 # Use it
-zd tickets list --profile staging
+zentui tickets list --profile staging
 ```
 
 ### Setting config values
 
 ```bash
-zd config set subdomain mycompany
-zd config show
+zentui config set subdomain mycompany
+zentui config show
 ```
 
 ## Exit codes

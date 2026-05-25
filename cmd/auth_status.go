@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/johanviberg/zd/internal/auth"
-	"github.com/johanviberg/zd/internal/types"
+	"github.com/itsolver/zentui/internal/auth"
+	"github.com/itsolver/zentui/internal/types"
 )
 
 func init() {
@@ -26,7 +26,7 @@ var authStatusCmd = &cobra.Command{
 		}
 
 		if creds == nil {
-			return types.NewAuthError("not authenticated — run 'zd auth login' first")
+			return types.NewAuthError("not authenticated — run 'zentui auth login' first")
 		}
 
 		formatter := formatterFromCtx(cmd.Context())

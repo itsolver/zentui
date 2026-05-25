@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/johanviberg/zd/internal/config"
+	"github.com/itsolver/zentui/internal/config"
 )
 
 type Credentials struct {
