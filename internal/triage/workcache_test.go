@@ -33,6 +33,28 @@ func TestExtractImageSourcesDedupeAndSkipsUnsupportedAttachments(t *testing.T) {
 	assert.Equal(t, "screen.png", sources[0].Filename)
 }
 
+func TestExtractImageSourcesFromAudits(t *testing.T) {
+	audits := []types.Audit{{
+		ID:       10,
+		AuthorID: 1,
+		Events: []types.AuditEvent{{
+			ID:       100,
+			Type:     "Comment",
+			HTMLBody: `<img src="https://uploads.example.test/a.png">`,
+			Attachments: []types.Attachment{{
+				FileName:    "b.jpg",
+				ContentURL:  "https://uploads.example.test/b.jpg",
+				ContentType: "image/jpeg",
+			}},
+		}},
+	}}
+
+	sources := ExtractImageSourcesFromAudits(audits)
+
+	require.Len(t, sources, 2)
+	assert.Equal(t, int64(100), sources[0].CommentID)
+}
+
 func TestDownloadImageWritesManifestAndReusesURL(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/png")

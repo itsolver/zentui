@@ -25,6 +25,8 @@ type operatorModel struct {
 	orgs        map[int64]types.Organization
 	fieldLabels map[int64]string
 	imageCount  int
+	assets      []triage.AssetRecord
+	analysis    map[string]triage.ImageAnalysis
 	timer       triage.TicketTimer
 	timerPaused bool
 }
@@ -34,6 +36,7 @@ func newOperatorModel() operatorModel {
 		users:       map[int64]types.User{},
 		orgs:        map[int64]types.Organization{},
 		fieldLabels: map[int64]string{},
+		analysis:    map[string]triage.ImageAnalysis{},
 	}
 }
 
@@ -69,6 +72,20 @@ func (m *operatorModel) setTicketFields(fields []types.TicketField) {
 	m.fieldLabels = make(map[int64]string, len(fields))
 	for _, field := range fields {
 		m.fieldLabels[field.ID] = field.Title
+	}
+}
+
+func (m *operatorModel) setAssets(manifest triage.Manifest, analysis map[string]triage.ImageAnalysis) {
+	m.assets = manifest.Assets
+	m.analysis = analysis
+	count := 0
+	for _, asset := range manifest.Assets {
+		if !asset.Skipped {
+			count++
+		}
+	}
+	if count > 0 {
+		m.imageCount = count
 	}
 }
 
@@ -123,6 +140,24 @@ func (m operatorModel) View() string {
 
 	b.WriteString(headerStyle.Render("Assets") + "\n")
 	b.WriteString(m.renderLine("Images", fmt.Sprintf("%d", m.imageCount)))
+	for i, asset := range m.assets {
+		if i >= 3 {
+			b.WriteString(dimStyle.Render("...") + "\n")
+			break
+		}
+		if asset.Skipped {
+			b.WriteString(m.renderLine(asset.Filename, asset.SkipReason))
+			continue
+		}
+		b.WriteString(m.renderLine(asset.Filename, asset.LocalPath))
+		if obs, ok := m.analysis[asset.SHA256]; ok {
+			prefix := "AI"
+			if obs.IsSignatureOrLogo {
+				prefix = "AI low"
+			}
+			b.WriteString(m.renderLine(prefix, obs.Summary))
+		}
+	}
 	b.WriteString("\n")
 
 	if len(m.ticket.CustomFields) > 0 {

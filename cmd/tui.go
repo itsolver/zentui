@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strconv"
 	"time"
@@ -9,9 +10,12 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/itsolver/zentui/internal/api"
 	"github.com/itsolver/zentui/internal/auth"
 	"github.com/itsolver/zentui/internal/cache"
+	"github.com/itsolver/zentui/internal/demo"
 	"github.com/itsolver/zentui/internal/tui"
+	"github.com/itsolver/zentui/pkg/zendesk"
 )
 
 func init() {
@@ -43,23 +47,23 @@ var tuiCmd = &cobra.Command{
 	Short: "Interactive terminal UI for managing tickets",
 	Long:  "Launch an interactive terminal interface for browsing, viewing, and managing Zendesk tickets.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		ticketSvc, err := newTicketService(cmd)
-		if err != nil {
-			return err
-		}
-
-		searchSvc, err := newSearchService(cmd)
-		if err != nil {
-			return err
-		}
-
-		userSvc, err := newUserService(cmd)
-		if err != nil {
-			return err
-		}
-
-		// Wrap with cache for non-demo mode to reduce API calls
-		if demoStoreFromCtx(cmd.Context()) == nil {
+		var ticketSvc zendesk.TicketService
+		var searchSvc zendesk.SearchService
+		var userSvc zendesk.UserService
+		var attachmentHTTPClient *http.Client
+		if store := demoStoreFromCtx(cmd.Context()); store != nil {
+			ticketSvc = demo.NewTicketService(store)
+			searchSvc = demo.NewSearchService(store)
+			userSvc = demo.NewUserService(store)
+		} else {
+			client, err := buildClient(cmd)
+			if err != nil {
+				return err
+			}
+			ticketSvc = api.NewTicketService(client)
+			searchSvc = api.NewSearchService(client)
+			userSvc = api.NewUserService(client)
+			attachmentHTTPClient = client.HTTPClient
 			c := cache.New(60 * time.Second)
 			ticketSvc = cache.NewCachedTicketService(ticketSvc, c)
 			searchSvc = cache.NewCachedSearchService(searchSvc, c)
@@ -89,6 +93,7 @@ var tuiCmd = &cobra.Command{
 			CodexReasoning:     codexReasoning,
 			PythonBin:          pythonBin,
 			WorkDir:            workDir,
+			HTTPClient:         attachmentHTTPClient,
 		})
 		p := tea.NewProgram(app)
 

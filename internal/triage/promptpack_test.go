@@ -40,3 +40,50 @@ echo '{"answer":"Clean","recommended_status":"pending","reasoning_summary":"ok"}
 	assert.Equal(t, "Clean", out.Answer)
 	assert.Equal(t, "pending", out.RecommendedStatus)
 }
+
+func TestBuildImagePromptPackUsesHelper(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "fake-helper")
+	require.NoError(t, os.WriteFile(helper, []byte(`#!/bin/sh
+echo '{"status":"success","kind":"image","ticket_id":"123","schema":{"type":"object"},"prompt":"image prompt"}'
+`), 0o700))
+
+	pack, err := BuildImagePromptPack(context.Background(), dir, helper, 123, "screen.png", "https://example.test/screen.png", "")
+
+	require.NoError(t, err)
+	assert.Equal(t, "image", pack.Kind)
+	assert.Equal(t, "image prompt", pack.Prompt)
+}
+
+func TestBuildAndNormalizeMergePromptPackUsesHelpers(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "fake-helper")
+	require.NoError(t, os.WriteFile(helper, []byte(`#!/bin/sh
+case "$2" in
+  merge-pool)
+    echo '{"status":"success","source_ticket":{"id":123},"candidates":[{"id":456,"subject":"Target","status":"open"}]}'
+    ;;
+  merge-pack)
+    cat >/dev/null
+    echo '{"status":"success","kind":"merge","ticket_id":"123","schema":{"type":"object"},"prompt":"merge prompt"}'
+    ;;
+  normalize-merge)
+    cat >/dev/null
+    echo '{"suggestions":[{"id":456,"subject":"Target","status":"open","relevance_score":91,"rationale":"same issue"}],"recommended_target_id":456}'
+    ;;
+esac
+`), 0o700))
+
+	pool, err := BuildMergePool(context.Background(), dir, helper, 123)
+	require.NoError(t, err)
+	require.Len(t, pool.Candidates, 1)
+
+	pack, err := BuildMergePromptPack(context.Background(), dir, helper, pool.SourceTicket, pool.Candidates)
+	require.NoError(t, err)
+	assert.Equal(t, "merge prompt", pack.Prompt)
+
+	normalized, err := NormalizeMergePromptPackResult(context.Background(), dir, helper, []byte(`{"ranked_candidates":[]}`), pool.Candidates)
+	require.NoError(t, err)
+	require.Len(t, normalized.Suggestions, 1)
+	assert.Equal(t, int64(456), normalized.RecommendedTargetID)
+}

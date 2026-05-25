@@ -165,6 +165,27 @@ func ExtractImageSources(comments []types.Comment) []ImageSource {
 	return out
 }
 
+func ExtractImageSourcesFromAudits(audits []types.Audit) []ImageSource {
+	var comments []types.Comment
+	for _, audit := range audits {
+		for _, event := range audit.Events {
+			if event.Type != "Comment" {
+				continue
+			}
+			comments = append(comments, types.Comment{
+				ID:          event.ID,
+				Body:        event.Body,
+				HTMLBody:    event.HTMLBody,
+				Public:      event.Public,
+				AuthorID:    audit.AuthorID,
+				Attachments: event.Attachments,
+				CreatedAt:   audit.CreatedAt,
+			})
+		}
+	}
+	return ExtractImageSources(comments)
+}
+
 func (c WorkCache) DownloadImage(ctx context.Context, ticketID int64, source ImageSource) (AssetRecord, error) {
 	if _, err := c.EnsureTicketDir(ticketID); err != nil {
 		return AssetRecord{}, err

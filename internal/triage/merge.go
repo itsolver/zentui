@@ -77,3 +77,16 @@ func NormalizeMergeRanking(ranking MergeRanking, candidates []types.Ticket, max 
 func IsRecentSolvedTarget(ticket types.Ticket, now time.Time) bool {
 	return ticket.Status == "solved" && now.Sub(ticket.UpdatedAt) <= 24*time.Hour
 }
+
+func IsMergeableSourceStatus(status string) bool {
+	switch status {
+	case "closed", "solved":
+		return false
+	default:
+		return true
+	}
+}
+
+func IsMergeableTargetStatus(status string) bool {
+	return status != "closed"
+}

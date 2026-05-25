@@ -24,6 +24,13 @@ type ticketUpdatedMsg struct {
 
 type actionErrMsg struct{ err error }
 
+type mergePreviewMsg struct {
+	sourceStatus  string
+	targetStatus  string
+	targetSubject string
+	cleanupPlan   triage.RequesterCleanupPlan
+}
+
 type actionMode int
 
 const (
@@ -39,27 +46,36 @@ var validStatuses = []string{"new", "open", "pending", "hold", "solved"}
 var validPriorities = []string{"urgent", "high", "normal", "low"}
 
 type actionsModel struct {
-	tickets          zendesk.TicketService
-	ticketID         int64
-	mode             actionMode
-	textarea         textarea.Model
-	isPublic         bool
-	perms            permissions.Permissions
-	statusIdx        int
-	prioIdx          int
-	suggestedStatus  string
-	elapsedSeconds   int
-	existingTotal    int
-	reasoningSummary string
-	sourceTicketID   int64
-	submitting       bool
-	err              error
-	spinner          spinner.Model
-	width            int
-	height           int
-	current          string // current status or priority
-	ccPicker         ccPickerModel
-	ccFocused        bool
+	tickets             zendesk.TicketService
+	users               zendesk.UserService
+	ticketID            int64
+	mode                actionMode
+	textarea            textarea.Model
+	isPublic            bool
+	perms               permissions.Permissions
+	statusIdx           int
+	prioIdx             int
+	suggestedStatus     string
+	elapsedSeconds      int
+	existingTotal       int
+	reasoningSummary    string
+	sourceTicketID      int64
+	mergeSuggestions    []triage.MergeSuggestion
+	mergeSelection      int
+	mergeCleanupPlan    triage.RequesterCleanupPlan
+	mergeCleanupEnabled bool
+	mergePreviewReady   bool
+	mergeSourceStatus   string
+	mergeTargetStatus   string
+	mergeTargetSubject  string
+	submitting          bool
+	err                 error
+	spinner             spinner.Model
+	width               int
+	height              int
+	current             string // current status or priority
+	ccPicker            ccPickerModel
+	ccFocused           bool
 }
 
 func newActionsModel(tickets zendesk.TicketService, users zendesk.UserService) actionsModel {
@@ -74,6 +90,7 @@ func newActionsModel(tickets zendesk.TicketService, users zendesk.UserService) a
 
 	return actionsModel{
 		tickets:  tickets,
+		users:    users,
 		textarea: ta,
 		isPublic: true,
 		spinner:  s,
@@ -125,14 +142,29 @@ func (m actionsModel) openApproval(ticketID int64, perms permissions.Permissions
 	return m, m.textarea.Focus()
 }
 
-func (m actionsModel) openMerge(sourceTicketID int64) (actionsModel, tea.Cmd) {
+func (m actionsModel) openMerge(sourceTicketID int64, suggestions []triage.MergeSuggestion, recommendedTargetID int64) (actionsModel, tea.Cmd) {
 	m.ticketID = sourceTicketID
 	m.sourceTicketID = sourceTicketID
 	m.mode = actionMerge
 	m.err = nil
+	m.mergeSuggestions = suggestions
+	m.mergeSelection = 0
+	m.mergeCleanupPlan = triage.RequesterCleanupPlan{}
+	m.mergeCleanupEnabled = false
+	m.mergePreviewReady = false
+	m.mergeSourceStatus = ""
+	m.mergeTargetStatus = ""
+	m.mergeTargetSubject = ""
 	m.textarea.Reset()
 	m.textarea.Placeholder = "Target ticket ID"
 	m.textarea.SetHeight(1)
+	for i, suggestion := range suggestions {
+		if suggestion.ID == recommendedTargetID {
+			m.mergeSelection = i
+			m.textarea.SetValue(fmt.Sprint(suggestion.ID))
+			break
+		}
+	}
 	return m, m.textarea.Focus()
 }
 
@@ -227,12 +259,47 @@ func (m actionsModel) submitMerge() tea.Cmd {
 	sourceID := m.sourceTicketID
 	targetText := strings.TrimSpace(m.textarea.Value())
 	tickets := m.tickets
+	users := m.users
+	cleanupEnabled := m.mergeCleanupEnabled
 	return func() tea.Msg {
+		ctx := context.Background()
 		targetID, err := strconv.ParseInt(targetText, 10, 64)
 		if err != nil || targetID <= 0 {
 			return actionErrMsg{err: fmt.Errorf("target ticket ID is required")}
 		}
-		result, err := tickets.MergeTickets(context.Background(), targetID, &types.MergeTicketsRequest{
+		if targetID == sourceID {
+			return actionErrMsg{err: fmt.Errorf("cannot merge a ticket into itself")}
+		}
+		sourceResult, err := tickets.Get(ctx, sourceID, &types.GetTicketOptions{Include: "users"})
+		if err != nil {
+			return actionErrMsg{err: err}
+		}
+		targetResult, err := tickets.Get(ctx, targetID, &types.GetTicketOptions{Include: "users"})
+		if err != nil {
+			return actionErrMsg{err: err}
+		}
+		if !triage.IsMergeableSourceStatus(sourceResult.Ticket.Status) {
+			return actionErrMsg{err: fmt.Errorf("source ticket is not mergeable in its current status")}
+		}
+		if !triage.IsMergeableTargetStatus(targetResult.Ticket.Status) {
+			return actionErrMsg{err: fmt.Errorf("target ticket is not mergeable in its current status")}
+		}
+		if sourceResult.Ticket.OrganizationID != 0 && targetResult.Ticket.OrganizationID != 0 && sourceResult.Ticket.OrganizationID != targetResult.Ticket.OrganizationID {
+			return actionErrMsg{err: fmt.Errorf("target ticket must be in the same organization")}
+		}
+		audits, err := tickets.ListAudits(ctx, sourceID, &types.ListAuditsOptions{Include: "users", SortOrder: "asc"})
+		if err != nil {
+			return actionErrMsg{err: err}
+		}
+		sourceUser := findUser(sourceResult.Users, sourceResult.Ticket.RequesterID)
+		targetUser := findUser(targetResult.Users, targetResult.Ticket.RequesterID)
+		cleanupPlan := triage.BuildRequesterCleanupPlan(sourceResult.Ticket, audits.Audits, sourceUser, targetResult.Ticket, targetUser)
+		if cleanupEnabled {
+			if _, err := triage.ExecuteRequesterCleanup(ctx, users, cleanupPlan); err != nil {
+				return actionErrMsg{err: err}
+			}
+		}
+		result, err := tickets.MergeTickets(ctx, targetID, &types.MergeTicketsRequest{
 			IDs:           []int64{sourceID},
 			SourceComment: fmt.Sprintf("Closing as merged into #%d.", targetID),
 			TargetComment: fmt.Sprintf("Merging duplicate/follow-up ticket #%d.", sourceID),
@@ -245,6 +312,61 @@ func (m actionsModel) submitMerge() tea.Cmd {
 		}
 		return ticketUpdatedMsg{ticket: &types.Ticket{ID: targetID}}
 	}
+}
+
+func (m actionsModel) prepareMergePreview() tea.Cmd {
+	sourceID := m.sourceTicketID
+	targetText := strings.TrimSpace(m.textarea.Value())
+	tickets := m.tickets
+	return func() tea.Msg {
+		ctx := context.Background()
+		targetID, err := strconv.ParseInt(targetText, 10, 64)
+		if err != nil || targetID <= 0 {
+			return actionErrMsg{err: fmt.Errorf("target ticket ID is required")}
+		}
+		if targetID == sourceID {
+			return actionErrMsg{err: fmt.Errorf("cannot merge a ticket into itself")}
+		}
+		sourceResult, err := tickets.Get(ctx, sourceID, &types.GetTicketOptions{Include: "users"})
+		if err != nil {
+			return actionErrMsg{err: err}
+		}
+		targetResult, err := tickets.Get(ctx, targetID, &types.GetTicketOptions{Include: "users"})
+		if err != nil {
+			return actionErrMsg{err: err}
+		}
+		if !triage.IsMergeableSourceStatus(sourceResult.Ticket.Status) {
+			return actionErrMsg{err: fmt.Errorf("source ticket is not mergeable in its current status")}
+		}
+		if !triage.IsMergeableTargetStatus(targetResult.Ticket.Status) {
+			return actionErrMsg{err: fmt.Errorf("target ticket is not mergeable in its current status")}
+		}
+		if sourceResult.Ticket.OrganizationID != 0 && targetResult.Ticket.OrganizationID != 0 && sourceResult.Ticket.OrganizationID != targetResult.Ticket.OrganizationID {
+			return actionErrMsg{err: fmt.Errorf("target ticket must be in the same organization")}
+		}
+		audits, err := tickets.ListAudits(ctx, sourceID, &types.ListAuditsOptions{Include: "users", SortOrder: "asc"})
+		if err != nil {
+			return actionErrMsg{err: err}
+		}
+		sourceUser := findUser(sourceResult.Users, sourceResult.Ticket.RequesterID)
+		targetUser := findUser(targetResult.Users, targetResult.Ticket.RequesterID)
+		plan := triage.BuildRequesterCleanupPlan(sourceResult.Ticket, audits.Audits, sourceUser, targetResult.Ticket, targetUser)
+		return mergePreviewMsg{
+			sourceStatus:  sourceResult.Ticket.Status,
+			targetStatus:  targetResult.Ticket.Status,
+			targetSubject: targetResult.Ticket.Subject,
+			cleanupPlan:   plan,
+		}
+	}
+}
+
+func findUser(users []types.User, id int64) *types.User {
+	for i := range users {
+		if users[i].ID == id {
+			return &users[i]
+		}
+	}
+	return nil
 }
 
 func (m actionsModel) submitStatus() tea.Cmd {
@@ -305,6 +427,16 @@ func (m actionsModel) Update(msg tea.Msg) (actionsModel, tea.Cmd) {
 	case ticketUpdatedMsg:
 		m.submitting = false
 		m = m.close()
+		return m, nil
+
+	case mergePreviewMsg:
+		m.submitting = false
+		m.mergePreviewReady = true
+		m.mergeSourceStatus = msg.sourceStatus
+		m.mergeTargetStatus = msg.targetStatus
+		m.mergeTargetSubject = msg.targetSubject
+		m.mergeCleanupPlan = msg.cleanupPlan
+		m.mergeCleanupEnabled = msg.cleanupPlan.DefaultEnabled
 		return m, nil
 
 	case actionErrMsg:
@@ -418,11 +550,40 @@ func (m actionsModel) Update(msg tea.Msg) (actionsModel, tea.Cmd) {
 			case key.Matches(msg, keys.Submit):
 				if strings.TrimSpace(m.textarea.Value()) != "" {
 					m.submitting = true
+					if !m.mergePreviewReady {
+						return m, tea.Batch(m.spinner.Tick, m.prepareMergePreview())
+					}
 					return m, tea.Batch(m.spinner.Tick, m.submitMerge())
 				}
+			case key.Matches(msg, keys.Tab):
+				if m.mergeCleanupPlan.Eligible {
+					m.mergeCleanupEnabled = !m.mergeCleanupEnabled
+				}
+				return m, nil
+			case key.Matches(msg, keys.Up):
+				if len(m.mergeSuggestions) > 0 && m.mergeSelection > 0 {
+					m.mergeSelection--
+					m.textarea.SetValue(fmt.Sprint(m.mergeSuggestions[m.mergeSelection].ID))
+					m.mergePreviewReady = false
+				}
+				return m, nil
+			case key.Matches(msg, keys.Down):
+				if len(m.mergeSuggestions) > 0 && m.mergeSelection < len(m.mergeSuggestions)-1 {
+					m.mergeSelection++
+					m.textarea.SetValue(fmt.Sprint(m.mergeSuggestions[m.mergeSelection].ID))
+					m.mergePreviewReady = false
+				}
+				return m, nil
+			case key.Matches(msg, keys.Enter):
+				if len(m.mergeSuggestions) > 0 {
+					m.textarea.SetValue(fmt.Sprint(m.mergeSuggestions[m.mergeSelection].ID))
+					m.mergePreviewReady = false
+				}
+				return m, nil
 			default:
 				var cmd tea.Cmd
 				m.textarea, cmd = m.textarea.Update(msg)
+				m.mergePreviewReady = false
 				return m, cmd
 			}
 
@@ -495,14 +656,71 @@ func (m actionsModel) viewMerge() string {
 	m.textarea.SetWidth(width)
 	var statusLine string
 	if m.submitting {
-		statusLine = "\n" + m.spinner.View() + " Merging tickets..."
+		statusLine = "\n" + m.spinner.View() + " Checking merge..."
 	} else if m.err != nil {
 		statusLine = "\n" + errorStyle.Render("Error: "+m.err.Error())
 	}
+
+	var suggestions strings.Builder
+	if len(m.mergeSuggestions) > 0 {
+		suggestions.WriteString(headerStyle.Render("Suggestions") + "\n")
+		for i, suggestion := range m.mergeSuggestions {
+			pointer := "  "
+			if i == m.mergeSelection {
+				pointer = "> "
+			}
+			line := fmt.Sprintf("#%d %s %s %d%%", suggestion.ID, suggestion.Status, suggestion.Subject, suggestion.RelevanceScore)
+			if suggestion.Rationale != "" {
+				line += " - " + suggestion.Rationale
+			}
+			if i == m.mergeSelection {
+				suggestions.WriteString(selectedStyle.Render(pointer+line) + "\n")
+			} else {
+				suggestions.WriteString(pointer + line + "\n")
+			}
+		}
+		suggestions.WriteString("\n")
+	}
+
+	var preview strings.Builder
+	if m.mergePreviewReady {
+		preview.WriteString(headerStyle.Render("Confirmation") + "\n")
+		preview.WriteString(labelStyle.Render("Source status:") + " " + valueStyle.Render(m.mergeSourceStatus) + "\n")
+		preview.WriteString(labelStyle.Render("Target status:") + " " + valueStyle.Render(m.mergeTargetStatus) + "\n")
+		preview.WriteString(labelStyle.Render("Target subject:") + " " + valueStyle.Render(m.mergeTargetSubject) + "\n")
+		preview.WriteString(labelStyle.Render("Source comment:") + " " + valueStyle.Render(fmt.Sprintf("Closing as merged into #%s.", strings.TrimSpace(m.textarea.Value()))) + "\n")
+		preview.WriteString(labelStyle.Render("Target comment:") + " " + valueStyle.Render(fmt.Sprintf("Merging duplicate/follow-up ticket #%d.", m.sourceTicketID)) + "\n")
+		cleanup := "unavailable"
+		if m.mergeCleanupPlan.Eligible {
+			if m.mergeCleanupEnabled {
+				cleanup = "will run"
+			} else {
+				cleanup = "available, disabled"
+			}
+		} else if m.mergeCleanupPlan.Reason != "" {
+			cleanup = "skipped: " + m.mergeCleanupPlan.Reason
+		}
+		preview.WriteString(labelStyle.Render("Requester cleanup:") + " " + valueStyle.Render(cleanup) + "\n")
+		if m.mergeCleanupPlan.PhoneNumber != "" {
+			preview.WriteString(labelStyle.Render("Phone identity:") + " " + valueStyle.Render(m.mergeCleanupPlan.PhoneNumber) + "\n")
+		}
+		preview.WriteString("\n")
+	}
+
+	help := "ctrl+s preview"
+	if m.mergePreviewReady {
+		help = "ctrl+s confirm merge"
+	}
+	if m.mergeCleanupPlan.Eligible {
+		help += "   tab toggle cleanup"
+	}
+	help += "   ↑↓ suggestions   enter select   esc cancel"
 	content := title + "\n\n" +
 		labelStyle.Render("Source:") + " " + valueStyle.Render(fmt.Sprintf("#%d", m.sourceTicketID)) + "\n" +
+		suggestions.String() +
 		labelStyle.Render("Target:") + "\n" + m.textarea.View() + "\n\n" +
-		dimStyle.Render("ctrl+s merge   esc cancel") + statusLine
+		preview.String() +
+		dimStyle.Render(help) + statusLine
 	return borderStyle.Width(width + 4).Render(content)
 }
 

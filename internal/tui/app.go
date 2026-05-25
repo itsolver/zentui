@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -52,6 +53,21 @@ type draftGeneratedMsg struct {
 
 type draftErrMsg struct{ err error }
 
+type assetsPreparedMsg struct {
+	ticketID int64
+	manifest triage.Manifest
+	analysis map[string]triage.ImageAnalysis
+	err      error
+}
+
+type mergePreparedMsg struct {
+	ticketID            int64
+	suggestions         []triage.MergeSuggestion
+	recommendedTargetID int64
+}
+
+type mergePrepareErrMsg struct{ err error }
+
 type App struct {
 	tickets     zendesk.TicketService
 	search      zendesk.SearchService
@@ -74,6 +90,8 @@ type App struct {
 	pythonBin   string
 	draftBusy   bool
 	draftErr    error
+	mergeBusy   bool
+	mergeErr    error
 	width       int
 	height      int
 	focus       panelFocus
@@ -90,6 +108,7 @@ type AppOptions struct {
 	CodexReasoning     string
 	PythonBin          string
 	WorkDir            string
+	HTTPClient         *http.Client
 }
 
 func NewApp(tickets zendesk.TicketService, search zendesk.SearchService, users zendesk.UserService, subdomain, version string) App {
@@ -121,7 +140,7 @@ func NewAppWithOptions(tickets zendesk.TicketService, search zendesk.SearchServi
 		gotoM:      newGotoModel(),
 		cmdPalette: newCmdPaletteModel(),
 		codex:      codex,
-		workCache:  triage.WorkCache{Root: opts.WorkDir},
+		workCache:  triage.WorkCache{Root: opts.WorkDir, HTTPClient: opts.HTTPClient},
 		pythonBin:  opts.PythonBin,
 	}
 }
@@ -321,6 +340,102 @@ func (m App) generateDraft(ticket types.Ticket) tea.Cmd {
 	}
 }
 
+func (m App) prepareAssets(ticketID int64, audits []types.Audit) tea.Cmd {
+	cache := m.workCache
+	codex := m.codex
+	pythonBin := m.pythonBin
+	return func() tea.Msg {
+		if ticketID == 0 {
+			return nil
+		}
+		if _, err := cache.EnsureTicketDir(ticketID); err != nil {
+			return assetsPreparedMsg{ticketID: ticketID, err: err}
+		}
+		sources := triage.ExtractImageSourcesFromAudits(audits)
+		for _, source := range sources {
+			if _, err := cache.DownloadImage(context.Background(), ticketID, source); err != nil {
+				return assetsPreparedMsg{ticketID: ticketID, err: err}
+			}
+		}
+		manifest, err := cache.ReadManifest(ticketID)
+		if err != nil {
+			return assetsPreparedMsg{ticketID: ticketID, err: err}
+		}
+		analysis, err := cache.ReadImageAnalysis(ticketID)
+		if err != nil {
+			return assetsPreparedMsg{ticketID: ticketID, err: err}
+		}
+		for _, asset := range manifest.Assets {
+			if asset.Skipped || asset.SHA256 == "" || analysis[asset.SHA256].Summary != "" {
+				continue
+			}
+			pack, err := triage.BuildImagePromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, ticketID, asset.Filename, asset.SourceURL, "")
+			if err != nil {
+				return assetsPreparedMsg{ticketID: ticketID, manifest: manifest, analysis: analysis, err: err}
+			}
+			result, err := codex.RunPrompt(context.Background(), pack.Prompt, pack.Schema, []string{asset.LocalPath})
+			if err != nil {
+				return assetsPreparedMsg{ticketID: ticketID, manifest: manifest, analysis: analysis, err: err}
+			}
+			output, err := codexrunner.DecodeOutput[triage.ImageOutput](result.Output)
+			if err != nil {
+				return assetsPreparedMsg{ticketID: ticketID, manifest: manifest, analysis: analysis, err: err}
+			}
+			analysis[asset.SHA256] = triage.ImageAnalysis{
+				Summary:           output.Summary,
+				VisibleText:       output.VisibleText,
+				IsSignatureOrLogo: output.IsSignatureOrLogo,
+				Relevance:         output.Relevance,
+			}
+			_ = cache.AppendCodexRun(ticketID, map[string]any{
+				"kind":       "image",
+				"ticket_id":  ticketID,
+				"asset":      asset.Filename,
+				"sha256":     asset.SHA256,
+				"usage":      result.Usage,
+				"created_at": time.Now().UTC().Format(time.RFC3339),
+			})
+		}
+		if err := cache.WriteImageAnalysis(ticketID, analysis); err != nil {
+			return assetsPreparedMsg{ticketID: ticketID, manifest: manifest, analysis: analysis, err: err}
+		}
+		return assetsPreparedMsg{ticketID: ticketID, manifest: manifest, analysis: analysis}
+	}
+}
+
+func (m App) generateMergeSuggestions(ticket types.Ticket) tea.Cmd {
+	codex := m.codex
+	pythonBin := m.pythonBin
+	return func() tea.Msg {
+		pool, err := triage.BuildMergePool(context.Background(), codex.CustomerSupportDir, pythonBin, ticket.ID)
+		if err != nil {
+			return mergePrepareErrMsg{err: err}
+		}
+		if pool.Status != "success" || len(pool.Candidates) == 0 {
+			return mergePreparedMsg{ticketID: ticket.ID}
+		}
+		pack, err := triage.BuildMergePromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, pool.SourceTicket, pool.Candidates)
+		if err != nil {
+			return mergePrepareErrMsg{err: err}
+		}
+		result, err := codex.RunPrompt(context.Background(), pack.Prompt, pack.Schema, nil)
+		if err != nil {
+			return mergePrepareErrMsg{err: err}
+		}
+		normalized, err := triage.NormalizeMergePromptPackResult(context.Background(), codex.CustomerSupportDir, pythonBin, result.Output, pool.Candidates)
+		if err != nil {
+			return mergePrepareErrMsg{err: err}
+		}
+		_ = m.workCache.AppendCodexRun(ticket.ID, map[string]any{
+			"kind":       "merge",
+			"ticket_id":  ticket.ID,
+			"usage":      result.Usage,
+			"created_at": time.Now().UTC().Format(time.RFC3339),
+		})
+		return mergePreparedMsg{ticketID: ticket.ID, suggestions: normalized.Suggestions, recommendedTargetID: normalized.RecommendedTargetID}
+	}
+}
+
 func (m App) activeTicket() (types.Ticket, bool) {
 	if m.state == detailView && m.detail.ticket != nil {
 		return *m.detail.ticket, true
@@ -347,6 +462,19 @@ func (m App) startDraftForActiveTicket() (App, tea.Cmd) {
 	m.draftBusy = true
 	m.draftErr = nil
 	return m, m.generateDraft(ticket)
+}
+
+func (m App) startMergeForActiveTicket() (App, tea.Cmd) {
+	if m.mergeBusy {
+		return m, nil
+	}
+	ticket, ok := m.activeTicket()
+	if !ok {
+		return m, nil
+	}
+	m.mergeBusy = true
+	m.mergeErr = nil
+	return m, m.generateMergeSuggestions(ticket)
 }
 
 func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -435,13 +563,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 
 			if key.Matches(msg, keys.Merge) {
-				ticket, ok := m.activeTicket()
-				if !ok {
-					return m, nil
-				}
-				var cmd tea.Cmd
-				m.actions, cmd = m.actions.openMerge(ticket.ID)
-				return m, cmd
+				return m.startMergeForActiveTicket()
 			}
 
 			// Tab: toggle focus in split view
@@ -503,10 +625,11 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Route to active action overlay first
 	if m.actions.mode != actionNone {
 		switch msg.(type) {
-		case tea.KeyPressMsg, spinner.TickMsg, ticketUpdatedMsg, actionErrMsg, ccAutocompleteMsg, ccAutocompleteErrMsg:
+		case tea.KeyPressMsg, spinner.TickMsg, ticketUpdatedMsg, actionErrMsg, mergePreviewMsg, ccAutocompleteMsg, ccAutocompleteErrMsg:
 			var cmd tea.Cmd
 			m.actions, cmd = m.actions.Update(msg)
 			if _, ok := msg.(ticketUpdatedMsg); ok {
+				m.operator.resetTimer()
 				m.list.loading = true
 				return m, tea.Batch(cmd, m.list.spinner.Tick, m.list.loadTickets())
 			}
@@ -592,6 +715,18 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.draftErr = msg.err
 		return m, nil
 
+	case mergePreparedMsg:
+		m.mergeBusy = false
+		m.mergeErr = nil
+		var cmd tea.Cmd
+		m.actions, cmd = m.actions.openMerge(msg.ticketID, msg.suggestions, msg.recommendedTargetID)
+		return m, cmd
+
+	case mergePrepareErrMsg:
+		m.mergeBusy = false
+		m.mergeErr = msg.err
+		return m, nil
+
 	case ticketLoadedMsg:
 		var cmd tea.Cmd
 		m.detail, cmd = m.detail.Update(msg)
@@ -605,7 +740,17 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.detail, cmd = m.detail.Update(msg)
 		m.operator.imageCount = len(m.detail.imageAttachments)
-		return m, cmd
+		cmds := []tea.Cmd{cmd}
+		if m.detail.ticket != nil {
+			cmds = append(cmds, m.prepareAssets(m.detail.ticket.ID, msg.audits))
+		}
+		return m, tea.Batch(cmds...)
+
+	case assetsPreparedMsg:
+		if msg.err == nil && (m.detail.ticket == nil || msg.ticketID == m.detail.ticket.ID) {
+			m.operator.setAssets(msg.manifest, msg.analysis)
+		}
+		return m, nil
 
 	case countdownTickMsg:
 		if !m.list.autoRefresh {
@@ -1186,13 +1331,7 @@ func (m *App) handlePaletteAction(action string) (tea.Model, tea.Cmd) {
 	case "draft":
 		return m.startDraftForActiveTicket()
 	case "merge":
-		ticket, ok := m.activeTicket()
-		if !ok {
-			return m, nil
-		}
-		var cmd tea.Cmd
-		m.actions, cmd = m.actions.openMerge(ticket.ID)
-		return m, cmd
+		return m.startMergeForActiveTicket()
 	case "status":
 		var id int64
 		var status string
@@ -1425,6 +1564,11 @@ func (m App) helpBar() string {
 		left = "Generating draft with codex exec...  " + left
 	} else if m.draftErr != nil {
 		left = errorStyle.Render("Draft error: "+m.draftErr.Error()) + "  " + left
+	}
+	if m.mergeBusy {
+		left = "Ranking merge targets with codex exec...  " + left
+	} else if m.mergeErr != nil {
+		left = errorStyle.Render("Merge error: "+m.mergeErr.Error()) + "  " + left
 	}
 
 	if m.currentUser == nil || m.width == 0 {
