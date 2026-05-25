@@ -152,13 +152,24 @@ func TestDownloadImageUsesAuthClientOnlyForTrustedHosts(t *testing.T) {
 }
 
 func TestWorkCacheTrustsZendeskContentHostSuffixes(t *testing.T) {
+	untrusted := &http.Client{Timeout: time.Second}
 	cache := WorkCache{
-		HTTPClient:   &http.Client{Transport: authHeaderTransport{base: http.DefaultTransport}},
-		TrustedHosts: []string{".zdusercontent.com"},
+		HTTPClient:          &http.Client{Transport: authHeaderTransport{base: http.DefaultTransport}},
+		UntrustedHTTPClient: untrusted,
+		TrustedHosts:        []string{".zdusercontent.com"},
 	}
 
 	assert.Same(t, cache.HTTPClient, cache.clientForSource("https://attachments.zdusercontent.com/asset.png"))
-	assert.Same(t, http.DefaultClient, cache.clientForSource("https://notzdusercontent.com/asset.png"))
+	assert.Same(t, untrusted, cache.clientForSource("https://notzdusercontent.com/asset.png"))
+}
+
+func TestWorkCacheUsesBoundedDefaultUntrustedClient(t *testing.T) {
+	cache := WorkCache{HTTPClient: &http.Client{}, TrustedHosts: []string{"example.zendesk.com"}}
+
+	client := cache.clientForSource("https://external.example.test/asset.png")
+
+	require.NotNil(t, client)
+	assert.Equal(t, 30*time.Second, client.Timeout)
 }
 
 func TestSafeFilenameHandlesOversizedExtension(t *testing.T) {

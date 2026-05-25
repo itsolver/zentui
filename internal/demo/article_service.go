@@ -2,7 +2,6 @@ package demo
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
@@ -19,10 +18,11 @@ func NewArticleService(store *Store) *ArticleService {
 
 func (s *ArticleService) List(ctx context.Context, opts *types.ListArticlesOptions) (*types.ArticlePage, error) {
 	articles := demoArticles()
+	page, meta := paginateArticles(articles, listArticleLimitAndCursor(opts))
 	return &types.ArticlePage{
-		Articles: articles,
+		Articles: page,
 		Count:    len(articles),
-		Meta:     types.PageMeta{HasMore: false},
+		Meta:     meta,
 	}, nil
 }
 
@@ -32,7 +32,7 @@ func (s *ArticleService) Get(ctx context.Context, id int64) (*types.ArticleResul
 			return &types.ArticleResult{Article: article}, nil
 		}
 	}
-	return nil, fmt.Errorf("demo article not found: %d", id)
+	return nil, types.NewNotFoundError("demo article not found")
 }
 
 func (s *ArticleService) Search(ctx context.Context, query string, opts *types.SearchArticlesOptions) (*types.ArticleSearchPage, error) {
@@ -44,11 +44,55 @@ func (s *ArticleService) Search(ctx context.Context, query string, opts *types.S
 			results = append(results, article)
 		}
 	}
+	page, meta := paginateArticles(results, searchArticleLimitAndCursor(opts))
 	return &types.ArticleSearchPage{
-		Results: results,
+		Results: page,
 		Count:   len(results),
-		Meta:    types.PageMeta{HasMore: false},
+		Meta:    meta,
 	}, nil
+}
+
+type articlePageOptions struct {
+	limit  int
+	cursor string
+}
+
+func listArticleLimitAndCursor(opts *types.ListArticlesOptions) articlePageOptions {
+	if opts == nil {
+		return articlePageOptions{}
+	}
+	return articlePageOptions{limit: opts.Limit, cursor: opts.Cursor}
+}
+
+func searchArticleLimitAndCursor(opts *types.SearchArticlesOptions) articlePageOptions {
+	if opts == nil {
+		return articlePageOptions{}
+	}
+	return articlePageOptions{limit: opts.Limit, cursor: opts.Cursor}
+}
+
+func paginateArticles(articles []types.Article, opts articlePageOptions) ([]types.Article, types.PageMeta) {
+	limit := 25
+	if opts.limit > 0 {
+		limit = opts.limit
+	}
+	offset := 0
+	if opts.cursor != "" {
+		offset = decodeCursor(opts.cursor)
+	}
+	if offset > len(articles) {
+		offset = len(articles)
+	}
+	end := offset + limit
+	hasMore := end < len(articles)
+	if end > len(articles) {
+		end = len(articles)
+	}
+	var afterCursor string
+	if hasMore {
+		afterCursor = encodeCursor(end)
+	}
+	return articles[offset:end], types.PageMeta{HasMore: hasMore, AfterCursor: afterCursor}
 }
 
 func demoArticles() []types.Article {

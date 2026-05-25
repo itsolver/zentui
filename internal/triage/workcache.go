@@ -28,9 +28,10 @@ const (
 var inlineURLRe = regexp.MustCompile(`https?://[^\s"'<>]+`)
 
 type WorkCache struct {
-	Root         string
-	HTTPClient   *http.Client
-	TrustedHosts []string
+	Root                string
+	HTTPClient          *http.Client
+	UntrustedHTTPClient *http.Client
+	TrustedHosts        []string
 }
 
 type ImageSource struct {
@@ -364,14 +365,14 @@ func (c WorkCache) addAsset(ticketID int64, asset AssetRecord) error {
 
 func (c WorkCache) clientForSource(raw string) *http.Client {
 	if c.HTTPClient == nil {
-		return http.DefaultClient
+		return c.untrustedClient()
 	}
 	if len(c.TrustedHosts) == 0 {
 		return c.HTTPClient
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil {
-		return http.DefaultClient
+		return c.untrustedClient()
 	}
 	host := strings.ToLower(parsed.Host)
 	hostname := strings.ToLower(parsed.Hostname())
@@ -387,7 +388,14 @@ func (c WorkCache) clientForSource(raw string) *http.Client {
 			return c.HTTPClient
 		}
 	}
-	return http.DefaultClient
+	return c.untrustedClient()
+}
+
+func (c WorkCache) untrustedClient() *http.Client {
+	if c.UntrustedHTTPClient != nil {
+		return c.UntrustedHTTPClient
+	}
+	return &http.Client{Timeout: 30 * time.Second}
 }
 
 func skippedAsset(source ImageSource, reason string) AssetRecord {

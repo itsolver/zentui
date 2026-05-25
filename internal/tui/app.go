@@ -101,15 +101,16 @@ type App struct {
 }
 
 type AppOptions struct {
-	ViewID             int64
-	Limit              int
-	CustomerSupportDir string
-	CodexModel         string
-	CodexReasoning     string
-	PythonBin          string
-	WorkDir            string
-	HTTPClient         *http.Client
-	TrustedHosts       []string
+	ViewID              int64
+	Limit               int
+	CustomerSupportDir  string
+	CodexModel          string
+	CodexReasoning      string
+	PythonBin           string
+	WorkDir             string
+	HTTPClient          *http.Client
+	UntrustedHTTPClient *http.Client
+	TrustedHosts        []string
 }
 
 func NewApp(tickets zendesk.TicketService, search zendesk.SearchService, users zendesk.UserService, subdomain, version string) App {
@@ -141,7 +142,7 @@ func NewAppWithOptions(tickets zendesk.TicketService, search zendesk.SearchServi
 		gotoM:      newGotoModel(),
 		cmdPalette: newCmdPaletteModel(),
 		codex:      codex,
-		workCache:  triage.WorkCache{Root: opts.WorkDir, HTTPClient: opts.HTTPClient, TrustedHosts: opts.TrustedHosts},
+		workCache:  triage.WorkCache{Root: opts.WorkDir, HTTPClient: opts.HTTPClient, UntrustedHTTPClient: opts.UntrustedHTTPClient, TrustedHosts: opts.TrustedHosts},
 		pythonBin:  opts.PythonBin,
 	}
 }

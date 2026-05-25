@@ -76,6 +76,7 @@ var tuiCmd = &cobra.Command{
 		var searchSvc zendesk.SearchService
 		var userSvc zendesk.UserService
 		var attachmentHTTPClient *http.Client
+		var untrustedAttachmentHTTPClient *http.Client
 		if store := demoStoreFromCtx(cmd.Context()); store != nil {
 			ticketSvc = demo.NewTicketService(store)
 			searchSvc = demo.NewSearchService(store)
@@ -89,6 +90,7 @@ var tuiCmd = &cobra.Command{
 			searchSvc = api.NewSearchService(client)
 			userSvc = api.NewUserService(client)
 			attachmentHTTPClient = client.HTTPClient
+			untrustedAttachmentHTTPClient = nonAuthAttachmentHTTPClient(client.HTTPClient)
 			c := cache.New(60 * time.Second)
 			ticketSvc = cache.NewCachedTicketService(ticketSvc, c)
 			searchSvc = cache.NewCachedSearchService(searchSvc, c)
@@ -118,15 +120,16 @@ var tuiCmd = &cobra.Command{
 		pythonBin, _ := cmd.Flags().GetString("python-bin")
 		workDir, _ := cmd.Flags().GetString("work-dir")
 		app := tui.NewAppWithOptions(ticketSvc, searchSvc, userSvc, subdomain, buildVersion, tui.AppOptions{
-			ViewID:             viewID,
-			Limit:              limit,
-			CustomerSupportDir: customerSupportDir,
-			CodexModel:         codexModel,
-			CodexReasoning:     codexReasoning,
-			PythonBin:          pythonBin,
-			WorkDir:            workDir,
-			HTTPClient:         attachmentHTTPClient,
-			TrustedHosts:       trustedAttachmentHosts,
+			ViewID:              viewID,
+			Limit:               limit,
+			CustomerSupportDir:  customerSupportDir,
+			CodexModel:          codexModel,
+			CodexReasoning:      codexReasoning,
+			PythonBin:           pythonBin,
+			WorkDir:             workDir,
+			HTTPClient:          attachmentHTTPClient,
+			UntrustedHTTPClient: untrustedAttachmentHTTPClient,
+			TrustedHosts:        trustedAttachmentHosts,
 		})
 		p := tea.NewProgram(app)
 
@@ -142,5 +145,17 @@ func zendeskAttachmentHosts(subdomain string) []string {
 		subdomain + ".zendesk.com",
 		".zdusercontent.com",
 		".zendeskusercontent.com",
+	}
+}
+
+func nonAuthAttachmentHTTPClient(source *http.Client) *http.Client {
+	timeout := 30 * time.Second
+	if source != nil && source.Timeout > 0 {
+		timeout = source.Timeout
+	}
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	return &http.Client{
+		Transport: &api.RetryTransport{Base: base, MaxRetries: 3},
+		Timeout:   timeout,
 	}
 }
