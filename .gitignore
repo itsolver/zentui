@@ -1,5 +1,6 @@
 # Binary
 /zd
+/zentui
 dist/
 
 # Generated during release
@@ -8,6 +9,7 @@ manpages/
 
 # Secrets and config
 .env
+.ticket-triage-work/
 credentials.json
 config.yaml
 *.pem
