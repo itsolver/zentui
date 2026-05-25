@@ -8,7 +8,7 @@ import (
 )
 
 // RefreshFunc is the signature for a function that refreshes an OAuth token.
-type RefreshFunc func(subdomain, clientID, refreshToken string) (*OAuthResult, error)
+type RefreshFunc func(subdomain, clientID, clientSecret, refreshToken string) (*OAuthResult, error)
 
 type AuthTransport struct {
 	Credentials *ProfileCredentials
@@ -33,7 +33,10 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		}
 	}
 
-	reqClone := req.Clone(req.Context())
+	reqClone, err := cloneRequest(req, false)
+	if err != nil {
+		return nil, err
+	}
 
 	switch t.Credentials.Method {
 	case "oauth":
@@ -64,8 +67,11 @@ func (t *AuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return nil, fmt.Errorf("token refresh failed: %w", err)
 		}
 
-		// Retry the request with the new token
-		retryReq := req.Clone(req.Context())
+		// Retry the request with the new token.
+		retryReq, err := cloneRequest(req, true)
+		if err != nil {
+			return nil, fmt.Errorf("preparing retry request: %w", err)
+		}
 		retryReq.Header.Set("Authorization", "Bearer "+t.Credentials.OAuthToken)
 		return base.RoundTrip(retryReq)
 	}
@@ -100,7 +106,7 @@ func (t *AuthTransport) refreshLocked() error {
 		refreshFn = RefreshAccessToken
 	}
 
-	result, err := refreshFn(t.Credentials.Subdomain, t.Credentials.OAuthClientID, t.Credentials.RefreshToken)
+	result, err := refreshFn(t.Credentials.Subdomain, t.Credentials.OAuthClientID, t.Credentials.OAuthClientSecret, t.Credentials.RefreshToken)
 	if err != nil {
 		return err
 	}
@@ -117,4 +123,23 @@ func (t *AuthTransport) refreshLocked() error {
 	}
 
 	return nil
+}
+
+func cloneRequest(req *http.Request, requireReplayableBody bool) (*http.Request, error) {
+	clone := req.Clone(req.Context())
+	if req.Body == nil {
+		return clone, nil
+	}
+	if req.GetBody == nil {
+		if requireReplayableBody {
+			return nil, fmt.Errorf("request body cannot be replayed for authenticated retry")
+		}
+		return clone, nil
+	}
+	body, err := req.GetBody()
+	if err != nil {
+		return nil, fmt.Errorf("reopening request body: %w", err)
+	}
+	clone.Body = body
+	return clone, nil
 }

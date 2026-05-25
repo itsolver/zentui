@@ -1,8 +1,10 @@
 package auth
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -67,16 +69,18 @@ func TestAuthTransport_ProactiveRefresh(t *testing.T) {
 
 	transport := &AuthTransport{
 		Credentials: &ProfileCredentials{
-			Method:         "oauth",
-			Subdomain:      "test",
-			OAuthToken:     "expired-token",
-			OAuthClientID:  "client-123",
-			RefreshToken:   "refresh-tok",
-			TokenExpiresAt: &expired,
+			Method:            "oauth",
+			Subdomain:         "test",
+			OAuthToken:        "expired-token",
+			OAuthClientID:     "client-123",
+			OAuthClientSecret: "stored-secret",
+			RefreshToken:      "refresh-tok",
+			TokenExpiresAt:    &expired,
 		},
 		Base: http.DefaultTransport,
-		RefreshFunc: func(subdomain, clientID, refreshToken string) (*OAuthResult, error) {
+		RefreshFunc: func(subdomain, clientID, clientSecret, refreshToken string) (*OAuthResult, error) {
 			refreshCalled.Add(1)
+			assert.Equal(t, "stored-secret", clientSecret)
 			return &OAuthResult{
 				AccessToken:  "new-access-token",
 				RefreshToken: "new-refresh-tok",
@@ -126,7 +130,7 @@ func TestAuthTransport_ReactiveRefreshOn401(t *testing.T) {
 			TokenExpiresAt: &future, // Not expired yet, but will get 401
 		},
 		Base: http.DefaultTransport,
-		RefreshFunc: func(subdomain, clientID, refreshToken string) (*OAuthResult, error) {
+		RefreshFunc: func(subdomain, clientID, clientSecret, refreshToken string) (*OAuthResult, error) {
 			return &OAuthResult{
 				AccessToken:  "refreshed-token",
 				RefreshToken: "new-refresh",
@@ -147,6 +151,54 @@ func TestAuthTransport_ReactiveRefreshOn401(t *testing.T) {
 	assert.Equal(t, "refreshed-token", transport.Credentials.OAuthToken)
 }
 
+func TestAuthTransport_ReactiveRefreshReplaysWriteBody(t *testing.T) {
+	future := time.Now().Add(1 * time.Hour)
+	newExpiry := time.Now().Add(2 * time.Hour)
+
+	var requestCount atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		count := requestCount.Add(1)
+		body, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		assert.Equal(t, "payload", string(body))
+		if count == 1 {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		assert.Equal(t, "Bearer refreshed-token", r.Header.Get("Authorization"))
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	transport := &AuthTransport{
+		Credentials: &ProfileCredentials{
+			Method:         "oauth",
+			Subdomain:      "test",
+			OAuthToken:     "stale-token",
+			OAuthClientID:  "client-123",
+			RefreshToken:   "refresh-tok",
+			TokenExpiresAt: &future,
+		},
+		Base: http.DefaultTransport,
+		RefreshFunc: func(subdomain, clientID, clientSecret, refreshToken string) (*OAuthResult, error) {
+			return &OAuthResult{
+				AccessToken:  "refreshed-token",
+				RefreshToken: "new-refresh",
+				ExpiresAt:    &newExpiry,
+			}, nil
+		},
+	}
+
+	req, err := http.NewRequest(http.MethodPost, server.URL, strings.NewReader("payload"))
+	require.NoError(t, err)
+
+	resp, err := transport.RoundTrip(req)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+	resp.Body.Close()
+	assert.Equal(t, int32(2), requestCount.Load())
+}
+
 func TestAuthTransport_NoRefreshWithoutRefreshToken(t *testing.T) {
 	expired := time.Now().Add(-5 * time.Minute)
 
@@ -165,7 +217,7 @@ func TestAuthTransport_NoRefreshWithoutRefreshToken(t *testing.T) {
 			// No RefreshToken
 		},
 		Base: http.DefaultTransport,
-		RefreshFunc: func(subdomain, clientID, refreshToken string) (*OAuthResult, error) {
+		RefreshFunc: func(subdomain, clientID, clientSecret, refreshToken string) (*OAuthResult, error) {
 			t.Fatal("refresh should not be called without a refresh token")
 			return nil, nil
 		},

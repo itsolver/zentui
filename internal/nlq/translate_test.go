@@ -97,29 +97,29 @@ func TestTranslateWithTime(t *testing.T) {
 		{
 			name:     "type problems",
 			input:    "problems",
-			expected: "type:problem",
+			expected: "ticket_type:problem",
 		},
 		{
 			name:     "type incidents",
 			input:    "incidents",
-			expected: "type:incident",
+			expected: "ticket_type:incident",
 		},
 		{
 			name:     "type questions",
 			input:    "questions",
-			expected: "type:question",
+			expected: "ticket_type:question",
 		},
 		{
 			name:     "type tasks",
 			input:    "tasks",
-			expected: "type:task",
+			expected: "ticket_type:task",
 		},
 
 		// --- Compound queries ---
 		{
 			name:     "high priority incidents compound",
 			input:    "high priority incidents",
-			expected: "priority:high type:incident",
+			expected: "priority:high ticket_type:incident",
 		},
 		{
 			name:  "open tickets from group compound",
@@ -293,22 +293,22 @@ func TestTranslateWithTime(t *testing.T) {
 		{
 			name:     "type problem singular",
 			input:    "problem",
-			expected: "type:problem",
+			expected: "ticket_type:problem",
 		},
 		{
 			name:     "type incident singular",
 			input:    "incident",
-			expected: "type:incident",
+			expected: "ticket_type:incident",
 		},
 		{
 			name:     "type question singular",
 			input:    "question",
-			expected: "type:question",
+			expected: "ticket_type:question",
 		},
 		{
 			name:     "type task singular",
 			input:    "task",
-			expected: "type:task",
+			expected: "ticket_type:task",
 		},
 
 		// --- "tag" keyword (regex branch) ---
@@ -409,7 +409,7 @@ func TestTranslateWithTime(t *testing.T) {
 		{
 			name:     "high priority incidents from group",
 			input:    "high priority incidents from billing",
-			expected: "priority:high group:billing type:incident",
+			expected: "priority:high group:billing ticket_type:incident",
 		},
 		{
 			name:     "unresolved + assigned + today",
@@ -538,6 +538,7 @@ func TestTranslate_PassthroughSyntaxDetection(t *testing.T) {
 		"-status:closed",
 		"status:open OR status:pending",
 		"type:incident",
+		"ticket_type:incident",
 		"group:support",
 		"requester:alice",
 		"tags:vip",
@@ -563,7 +564,7 @@ func TestTranslatePublicFunction(t *testing.T) {
 	}{
 		{"status:open", "status:open"},
 		{"show all open tickets", "status:open"},
-		{"high priority incidents", "priority:high type:incident"},
+		{"high priority incidents", "priority:high ticket_type:incident"},
 		{"", ""},
 	}
 	for _, tc := range tests {

@@ -91,11 +91,14 @@ func loginWithOAuth(cmd *cobra.Command, profile, subdomain string, cfg *config.C
 		clientID = cfg.OAuthClientID
 	}
 
-	// Fall back to credentials for stored OAuth client ID
-	if clientID == "" {
+	// Fall back to credentials for stored OAuth client settings.
+	if clientID == "" || clientSecret == "" {
 		if existingCreds, _ := auth.LoadCredentials(profile); existingCreds != nil {
 			if clientID == "" {
 				clientID = existingCreds.OAuthClientID
+			}
+			if clientSecret == "" {
+				clientSecret = existingCreds.OAuthClientSecret
 			}
 		}
 	}
@@ -115,12 +118,13 @@ func loginWithOAuth(cmd *cobra.Command, profile, subdomain string, cfg *config.C
 	}
 
 	creds := &auth.ProfileCredentials{
-		Method:         "oauth",
-		Subdomain:      subdomain,
-		OAuthToken:     result.AccessToken,
-		OAuthClientID:  clientID,
-		RefreshToken:   result.RefreshToken,
-		TokenExpiresAt: result.ExpiresAt,
+		Method:            "oauth",
+		Subdomain:         subdomain,
+		OAuthToken:        result.AccessToken,
+		OAuthClientID:     clientID,
+		OAuthClientSecret: clientSecret,
+		RefreshToken:      result.RefreshToken,
+		TokenExpiresAt:    result.ExpiresAt,
 	}
 
 	if err := auth.SaveCredentials(profile, creds); err != nil {

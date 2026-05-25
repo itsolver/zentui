@@ -3,18 +3,29 @@ package cmd
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
-	"sync"
+	"time"
 
 	"github.com/spf13/cobra"
+
+	"github.com/itsolver/zentui/internal/config"
 )
 
-var (
-	pendingConfirmations   = map[string]int64{}
-	pendingConfirmationsMu sync.Mutex
-)
+const deleteConfirmationTTL = 15 * time.Minute
+
+type deleteConfirmation struct {
+	TicketID  int64     `json:"ticket_id"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+type deleteConfirmationStore struct {
+	Confirmations map[string]deleteConfirmation `json:"confirmations"`
+}
 
 func init() {
 	ticketsCmd.AddCommand(ticketsDeleteCmd)
@@ -60,10 +71,9 @@ var ticketsDeleteCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("generating confirmation ID: %w", err)
 			}
-
-			pendingConfirmationsMu.Lock()
-			pendingConfirmations[confirmation] = id
-			pendingConfirmationsMu.Unlock()
+			if err := saveDeleteConfirmation(confirmation, id, time.Now()); err != nil {
+				return fmt.Errorf("saving confirmation ID: %w", err)
+			}
 
 			formatter := formatterFromCtx(cmd.Context())
 			dryRunResult := map[string]interface{}{
@@ -78,18 +88,8 @@ var ticketsDeleteCmd = &cobra.Command{
 		}
 
 		if confirmID != "" {
-			pendingConfirmationsMu.Lock()
-			expectedID, ok := pendingConfirmations[confirmID]
-			if ok {
-				delete(pendingConfirmations, confirmID)
-			}
-			pendingConfirmationsMu.Unlock()
-
-			if !ok {
-				return fmt.Errorf("invalid or expired confirmation ID: %s (run --dry-run first)", confirmID)
-			}
-			if expectedID != id {
-				return fmt.Errorf("confirmation ID was for ticket %d, not %d", expectedID, id)
+			if err := consumeDeleteConfirmation(confirmID, id, time.Now()); err != nil {
+				return err
 			}
 		} else if !yes {
 			return fmt.Errorf("deletion requires --yes, --dry-run/--confirm, or interactive confirmation")
@@ -114,4 +114,99 @@ func generateConfirmationID() (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(b), nil
+}
+
+func deleteConfirmationPath() string {
+	return filepath.Join(config.ConfigDir(), "delete-confirmations.json")
+}
+
+func saveDeleteConfirmation(confirmation string, ticketID int64, now time.Time) error {
+	store, err := loadDeleteConfirmationStore(now)
+	if err != nil {
+		return err
+	}
+	if store.Confirmations == nil {
+		store.Confirmations = make(map[string]deleteConfirmation)
+	}
+	store.Confirmations[confirmation] = deleteConfirmation{
+		TicketID:  ticketID,
+		ExpiresAt: now.Add(deleteConfirmationTTL),
+	}
+	return writeDeleteConfirmationStore(store)
+}
+
+func consumeDeleteConfirmation(confirmation string, ticketID int64, now time.Time) error {
+	store, err := loadDeleteConfirmationStore(now)
+	if err != nil {
+		return err
+	}
+	pending, ok := store.Confirmations[confirmation]
+	if !ok {
+		return fmt.Errorf("invalid or expired confirmation ID: %s (run --dry-run first)", confirmation)
+	}
+	if pending.TicketID != ticketID {
+		return fmt.Errorf("confirmation ID was for ticket %d, not %d", pending.TicketID, ticketID)
+	}
+	delete(store.Confirmations, confirmation)
+	return writeDeleteConfirmationStore(store)
+}
+
+func loadDeleteConfirmationStore(now time.Time) (*deleteConfirmationStore, error) {
+	path := deleteConfirmationPath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return &deleteConfirmationStore{Confirmations: map[string]deleteConfirmation{}}, nil
+		}
+		return nil, fmt.Errorf("reading delete confirmations: %w", err)
+	}
+	var store deleteConfirmationStore
+	if err := json.Unmarshal(data, &store); err != nil {
+		return nil, fmt.Errorf("parsing delete confirmations: %w", err)
+	}
+	if store.Confirmations == nil {
+		store.Confirmations = map[string]deleteConfirmation{}
+	}
+	for id, pending := range store.Confirmations {
+		if !pending.ExpiresAt.After(now) {
+			delete(store.Confirmations, id)
+		}
+	}
+	return &store, nil
+}
+
+func writeDeleteConfirmationStore(store *deleteConfirmationStore) error {
+	path := deleteConfirmationPath()
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return fmt.Errorf("creating config dir: %w", err)
+	}
+	data, err := json.MarshalIndent(store, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshaling delete confirmations: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, ".delete-confirmations-*.json")
+	if err != nil {
+		return err
+	}
+	tmpPath := tmp.Name()
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Chmod(0600); err != nil {
+		tmp.Close()
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		os.Remove(tmpPath)
+		return err
+	}
+	return nil
 }

@@ -158,16 +158,21 @@ func exchangeCode(subdomain, clientID, clientSecret, code, redirectURI, scope, c
 // RefreshAccessToken exchanges a refresh token for a new access token.
 // Zendesk refresh tokens are single-use: the response includes a new refresh token
 // that must be stored to replace the old one.
-func RefreshAccessToken(subdomain, clientID, refreshToken string) (*OAuthResult, error) {
+func RefreshAccessToken(subdomain, clientID, clientSecret, refreshToken string) (*OAuthResult, error) {
 	tokenURL := fmt.Sprintf("https://%s.zendesk.com/oauth/tokens", subdomain)
+	return postTokenRequest(tokenURL, refreshTokenValues(clientID, clientSecret, refreshToken))
+}
 
+func refreshTokenValues(clientID, clientSecret, refreshToken string) url.Values {
 	data := url.Values{
 		"grant_type":    {"refresh_token"},
 		"refresh_token": {refreshToken},
 		"client_id":     {clientID},
 	}
-
-	return postTokenRequest(tokenURL, data)
+	if clientSecret != "" {
+		data.Set("client_secret", clientSecret)
+	}
+	return data
 }
 
 func postTokenRequest(tokenURL string, data url.Values) (*OAuthResult, error) {
