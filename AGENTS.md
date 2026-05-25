@@ -40,6 +40,8 @@ Commit messages must follow Conventional Commits, enforced by `lefthook`:
 
 Before opening a PR, run `gofmt -w .`, `go test ./...`, and `go vet ./...`. PRs should describe the change, note testing performed, link any related issue, and include screenshots or terminal output for visible CLI/TUI changes.
 
+For Codex cloud app/bot reviews, do not rely on `gh pr view --json reviews` alone. Codex review submissions can have only a generic body while the actionable findings live as separate inline review comments/threads. For a complete read, inspect pull request review comments, for example `gh api repos/itsolver/zentui/pulls/<number>/comments`, and use a review-thread GraphQL fetch when resolution state matters.
+
 ## Agent-Specific Instructions
 
 Make surgical changes. Match existing patterns, avoid speculative refactors, and keep user-facing CLI contracts stable unless the task explicitly changes them.
