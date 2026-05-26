@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/itsolver/zentui/internal/triage"
@@ -24,11 +25,34 @@ type operatorModel struct {
 	users       map[int64]types.User
 	orgs        map[int64]types.Organization
 	fieldLabels map[int64]string
+	fieldMeta   map[int64]types.TicketField
 	imageCount  int
 	assets      []triage.AssetRecord
 	analysis    map[string]triage.ImageAnalysis
 	timer       triage.TicketTimer
 	timerPaused bool
+	fieldEdit   operatorFieldEdit
+}
+
+type operatorFieldRow struct {
+	Field    types.CustomField
+	Meta     types.TicketField
+	Label    string
+	Value    string
+	Editable bool
+	ReadOnly string
+}
+
+type operatorFieldEdit struct {
+	active     bool
+	ticketID   int64
+	fieldID    int64
+	label      string
+	fieldType  string
+	input      textarea.Model
+	err        error
+	submitting bool
+	clearArmed bool
 }
 
 func newOperatorModel() operatorModel {
@@ -36,8 +60,18 @@ func newOperatorModel() operatorModel {
 		users:       map[int64]types.User{},
 		orgs:        map[int64]types.Organization{},
 		fieldLabels: map[int64]string{},
+		fieldMeta:   map[int64]types.TicketField{},
 		analysis:    map[string]triage.ImageAnalysis{},
+		fieldEdit:   newOperatorFieldEdit(),
 	}
+}
+
+func newOperatorFieldEdit() operatorFieldEdit {
+	input := textarea.New()
+	input.Placeholder = "Field value"
+	input.ShowLineNumbers = false
+	input.SetHeight(1)
+	return operatorFieldEdit{input: input}
 }
 
 func operatorTick() tea.Cmd {
@@ -55,6 +89,9 @@ func (m *operatorModel) focusTicketID(ticketID int64) {
 }
 
 func (m *operatorModel) setTicket(ticket types.Ticket, users []types.User, orgs []types.Organization, imageCount int) {
+	if m.ticket == nil || m.ticket.ID != ticket.ID {
+		m.cancelFieldEdit()
+	}
 	m.ticket = &ticket
 	m.users = make(map[int64]types.User, len(users))
 	for _, user := range users {
@@ -70,8 +107,10 @@ func (m *operatorModel) setTicket(ticket types.Ticket, users []types.User, orgs 
 
 func (m *operatorModel) setTicketFields(fields []types.TicketField) {
 	m.fieldLabels = make(map[int64]string, len(fields))
+	m.fieldMeta = make(map[int64]types.TicketField, len(fields))
 	for _, field := range fields {
 		m.fieldLabels[field.ID] = field.Title
+		m.fieldMeta[field.ID] = field
 	}
 }
 
@@ -106,6 +145,34 @@ func (m *operatorModel) resetTimer() {
 
 func (m operatorModel) elapsedSeconds() int {
 	return m.timer.ElapsedSeconds(time.Now())
+}
+
+func (m operatorModel) fieldEditActive() bool {
+	return m.fieldEdit.active
+}
+
+func (m *operatorModel) openFieldEdit(ticketID int64, row operatorFieldRow) tea.Cmd {
+	m.fieldEdit.active = true
+	m.fieldEdit.ticketID = ticketID
+	m.fieldEdit.fieldID = row.Field.ID
+	m.fieldEdit.label = row.Label
+	m.fieldEdit.fieldType = row.Meta.Type
+	m.fieldEdit.err = nil
+	m.fieldEdit.submitting = false
+	m.fieldEdit.clearArmed = false
+	m.fieldEdit.input.Reset()
+	m.fieldEdit.input.SetHeight(1)
+	m.fieldEdit.input.Placeholder = "Field value"
+	m.fieldEdit.input.SetValue(row.Value)
+	return m.fieldEdit.input.Focus()
+}
+
+func (m *operatorModel) cancelFieldEdit() {
+	m.fieldEdit.active = false
+	m.fieldEdit.err = nil
+	m.fieldEdit.submitting = false
+	m.fieldEdit.clearArmed = false
+	m.fieldEdit.input.Blur()
 }
 
 func (m operatorModel) View() string {
@@ -163,23 +230,169 @@ func (m operatorModel) View() string {
 
 	if len(m.ticket.CustomFields) > 0 {
 		b.WriteString(headerStyle.Render("Fields") + "\n")
-		for _, field := range m.ticket.CustomFields {
-			if field.Value == nil || fmt.Sprint(field.Value) == "" {
+		for _, row := range m.fieldRows() {
+			if m.fieldEdit.active && m.fieldEdit.ticketID == m.ticket.ID && m.fieldEdit.fieldID == row.Field.ID {
+				b.WriteString(m.renderInlineFieldEdit(row))
 				continue
 			}
-			label := m.fieldLabels[field.ID]
-			if label == "" {
-				label = fmt.Sprintf("%d", field.ID)
+			value := row.Value
+			if !row.Editable && row.ReadOnly != "" {
+				value += " (" + row.ReadOnly + ")"
 			}
-			if shouldHideOperatorField(field.ID, label) {
-				continue
-			}
-			b.WriteString(m.renderLine(label, fmt.Sprint(field.Value)))
+			b.WriteString(m.renderLine(row.Label, value))
 		}
 	}
 
 	b.WriteString("\n" + dimStyle.Render("d draft   M merge   P pause timer   0 reset"))
 	return b.String()
+}
+
+func (m operatorModel) fieldRows() []operatorFieldRow {
+	if m.ticket == nil {
+		return nil
+	}
+	rows := make([]operatorFieldRow, 0, len(m.ticket.CustomFields))
+	for _, field := range m.ticket.CustomFields {
+		meta := m.fieldMeta[field.ID]
+		label := m.fieldLabels[field.ID]
+		if label == "" {
+			label = fmt.Sprintf("%d", field.ID)
+		}
+		if shouldHideOperatorField(field.ID, label) {
+			continue
+		}
+		value := ""
+		if field.Value != nil {
+			value = fmt.Sprint(field.Value)
+		}
+		editable := isEditableTicketField(meta.Type)
+		if value == "" && !editable {
+			continue
+		}
+		readOnly := ""
+		if !editable {
+			readOnly = "read-only"
+		}
+		rows = append(rows, operatorFieldRow{
+			Field:    field,
+			Meta:     meta,
+			Label:    label,
+			Value:    value,
+			Editable: editable,
+			ReadOnly: readOnly,
+		})
+	}
+	return rows
+}
+
+func (m operatorModel) fieldRowByID(fieldID int64) (operatorFieldRow, bool) {
+	for _, row := range m.fieldRows() {
+		if row.Field.ID == fieldID {
+			return row, true
+		}
+	}
+	return operatorFieldRow{}, false
+}
+
+func isEditableTicketField(fieldType string) bool {
+	switch fieldType {
+	case "text", "textarea", "regexp", "integer", "decimal":
+		return true
+	default:
+		return false
+	}
+}
+
+func (m operatorModel) hitRegions(originX, originY, width int, assetsFolder string) []hitRegion {
+	if width <= 0 {
+		width = m.width
+	}
+	regions := []hitRegion{}
+	if m.ticket == nil {
+		return regions
+	}
+	x2 := originX + width - 1
+	y := originY
+	y += 2 // Operator title + blank line
+
+	y++ // Timer
+	if m.timerPaused {
+		y++
+	}
+	y++ // blank
+
+	if _, ok := m.users[m.ticket.RequesterID]; ok {
+		y += 4
+	}
+	if org, ok := m.orgs[m.ticket.OrganizationID]; ok {
+		y += 3
+		if org.Details != "" {
+			y++
+		}
+	}
+
+	regions = append(regions, hitRegion{
+		Action:   hitAssetsFolder,
+		X1:       originX,
+		Y1:       y,
+		X2:       x2,
+		Y2:       y + 1,
+		TicketID: m.ticket.ID,
+		Path:     assetsFolder,
+	})
+	y += 2 // Assets header + Images line
+	for i, asset := range m.assets {
+		if i >= 3 {
+			y++
+			break
+		}
+		region := hitRegion{
+			X1:       originX,
+			Y1:       y,
+			X2:       x2,
+			Y2:       y,
+			Path:     asset.LocalPath,
+			Disabled: asset.Skipped || asset.LocalPath == "",
+			Reason:   asset.SkipReason,
+		}
+		if region.Disabled {
+			region.Action = hitAssetFile
+			if region.Reason == "" {
+				region.Reason = "asset is not downloaded"
+			}
+		} else {
+			region.Action = hitAssetFile
+		}
+		regions = append(regions, region)
+		y++
+		if obs, ok := m.analysis[asset.SHA256]; ok && obs.Summary != "" {
+			y++
+		}
+	}
+	y++ // blank
+
+	if len(m.ticket.CustomFields) > 0 {
+		y++ // Fields header
+		for _, row := range m.fieldRows() {
+			regions = append(regions, hitRegion{
+				Action:   hitFieldEdit,
+				X1:       originX,
+				Y1:       y,
+				X2:       x2,
+				Y2:       y,
+				TicketID: m.ticket.ID,
+				FieldID:  row.Field.ID,
+				Disabled: !row.Editable,
+				Reason:   row.ReadOnly,
+			})
+			if m.fieldEdit.active && m.fieldEdit.ticketID == m.ticket.ID && m.fieldEdit.fieldID == row.Field.ID {
+				y += m.inlineFieldEditHeight()
+			} else {
+				y++
+			}
+		}
+	}
+	return regions
 }
 
 func (m operatorModel) renderLine(label, value string) string {
@@ -195,6 +408,30 @@ func (m operatorModel) renderLine(label, value string) string {
 		value = string(runes[:width-1]) + "…"
 	}
 	return labelStyle.Render(label+":") + " " + valueStyle.Render(value) + "\n"
+}
+
+func (m operatorModel) renderInlineFieldEdit(row operatorFieldRow) string {
+	width := m.width - 2
+	if width < 12 {
+		width = 12
+	}
+	edit := m.fieldEdit
+	edit.input.SetWidth(width)
+
+	status := dimStyle.Render("ctrl+s update   esc cancel")
+	if edit.submitting {
+		status = dimStyle.Render("Updating field...")
+	} else if edit.err != nil {
+		status = errorStyle.Render("Error: " + edit.err.Error())
+	}
+
+	return labelStyle.Render(row.Label+":") + "\n" +
+		edit.input.View() + "\n" +
+		status + "\n"
+}
+
+func (m operatorModel) inlineFieldEditHeight() int {
+	return 3
 }
 
 func (m operatorModel) totalElapsedSeconds() int {

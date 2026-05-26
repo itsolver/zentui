@@ -42,6 +42,7 @@ const (
 	actionMerge
 	actionStatus
 	actionPriority
+	actionField
 )
 
 var validStatuses = []string{"new", "open", "pending", "hold", "solved"}
@@ -77,8 +78,17 @@ type actionsModel struct {
 	width               int
 	height              int
 	current             string // current status or priority
+	fieldID             int64
+	fieldLabel          string
+	fieldType           string
+	fieldClearArmed     bool
 	ccPicker            ccPickerModel
 	ccFocused           bool
+}
+
+type actionButtonSpec struct {
+	Label  string
+	Action hitAction
 }
 
 func newActionsModel(tickets zendesk.TicketService, users zendesk.UserService) actionsModel {
@@ -202,11 +212,28 @@ func (m actionsModel) openPriority(ticketID int64, currentPriority string) actio
 	return m
 }
 
+func (m actionsModel) openField(ticketID int64, fieldID int64, label string, currentValue string, fieldType string) (actionsModel, tea.Cmd) {
+	m.ticketID = ticketID
+	m.fieldID = fieldID
+	m.fieldLabel = label
+	m.fieldType = fieldType
+	m.fieldClearArmed = false
+	m.mode = actionField
+	m.err = nil
+	m.submitting = false
+	m.textarea.Reset()
+	m.textarea.Placeholder = "Field value"
+	m.textarea.SetHeight(1)
+	m.textarea.SetValue(currentValue)
+	return m, m.textarea.Focus()
+}
+
 func (m actionsModel) close() actionsModel {
 	m.mode = actionNone
 	m.textarea.Blur()
 	m.textarea.Placeholder = "Type your comment..."
 	m.textarea.SetHeight(6)
+	m.fieldClearArmed = false
 	return m
 }
 
@@ -417,6 +444,48 @@ func (m actionsModel) submitPriority() tea.Cmd {
 			return actionErrMsg{err}
 		}
 		return ticketUpdatedMsg{ticket: ticket}
+	}
+}
+
+func (m actionsModel) submitField() tea.Cmd {
+	valueText := strings.TrimSpace(m.textarea.Value())
+	value, err := parseTicketFieldValue(m.fieldType, valueText)
+	ticketID := m.ticketID
+	fieldID := m.fieldID
+	tickets := m.tickets
+	return func() tea.Msg {
+		if err != nil {
+			return actionErrMsg{err}
+		}
+		ticket, err := tickets.Update(context.Background(), ticketID, &types.UpdateTicketRequest{
+			CustomFields: []types.CustomField{{ID: fieldID, Value: value}},
+		})
+		if err != nil {
+			return actionErrMsg{err}
+		}
+		return ticketUpdatedMsg{ticket: ticket}
+	}
+}
+
+func parseTicketFieldValue(fieldType string, value string) (interface{}, error) {
+	if value == "" {
+		return "", nil
+	}
+	switch fieldType {
+	case "integer":
+		parsed, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("field value must be an integer")
+		}
+		return parsed, nil
+	case "decimal":
+		parsed, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return nil, fmt.Errorf("field value must be a decimal")
+		}
+		return parsed, nil
+	default:
+		return value, nil
 	}
 }
 
@@ -643,6 +712,29 @@ func (m actionsModel) Update(msg tea.Msg) (actionsModel, tea.Cmd) {
 				m.submitting = true
 				return m, tea.Batch(m.spinner.Tick, m.submitPriority())
 			}
+
+		case actionField:
+			switch {
+			case key.Matches(msg, keys.Back):
+				m = m.close()
+				return m, nil
+			case key.Matches(msg, keys.Submit):
+				if strings.TrimSpace(m.textarea.Value()) == "" && !m.fieldClearArmed {
+					m.fieldClearArmed = true
+					m.err = fmt.Errorf("field will be cleared; press ctrl+s again to confirm")
+					return m, nil
+				}
+				m.submitting = true
+				m.err = nil
+				return m, tea.Batch(m.spinner.Tick, m.submitField())
+			default:
+				var cmd tea.Cmd
+				m.textarea, cmd = m.textarea.Update(msg)
+				if strings.TrimSpace(m.textarea.Value()) != "" {
+					m.fieldClearArmed = false
+				}
+				return m, cmd
+			}
 		}
 	}
 	return m, nil
@@ -664,8 +756,34 @@ func (m actionsModel) View() string {
 		return m.viewPicker("Change Status", validStatuses, m.statusIdx)
 	case actionPriority:
 		return m.viewPicker("Change Priority", validPriorities, m.prioIdx)
+	case actionField:
+		return m.viewField()
 	}
 	return ""
+}
+
+func (m actionsModel) viewField() string {
+	title := titleStyle.Render("Edit Field")
+	width := m.width - 8
+	if width < 40 {
+		width = 40
+	}
+	m.textarea.SetWidth(width)
+
+	statusLine := ""
+	if m.submitting {
+		statusLine = "\n" + m.spinner.View() + " Updating field..."
+	} else if m.err != nil {
+		statusLine = "\n" + errorStyle.Render("Error: "+m.err.Error())
+	}
+
+	content := title + "\n\n" +
+		labelStyle.Render("Field:") + " " + valueStyle.Render(m.fieldLabel) + "\n" +
+		labelStyle.Render("Type:") + " " + valueStyle.Render(m.fieldType) + "\n\n" +
+		m.textarea.View() + "\n\n" +
+		m.renderButtonLine(width) + "\n" +
+		dimStyle.Render("ctrl+s update   esc cancel")
+	return borderStyle.Width(width + 4).Render(content + statusLine)
 }
 
 func (m actionsModel) viewMerge() string {
@@ -742,6 +860,7 @@ func (m actionsModel) viewMerge() string {
 		suggestions.String() +
 		labelStyle.Render("Target:") + "\n" + m.textarea.View() + "\n\n" +
 		preview.String() +
+		m.renderButtonLine(width) + "\n" +
 		dimStyle.Render(help) + statusLine
 	return borderStyle.Width(width + 4).Render(content)
 }
@@ -783,7 +902,7 @@ func (m actionsModel) viewApproval() string {
 	}
 
 	help := dimStyle.Render("ctrl+s post   esc cancel   tab public/internal   ↑↓ status")
-	content := title + "\n\n" + statusLine.String() + "\n" + m.textarea.View() + "\n\n" + publicToggle + "\n\n" + help + submitLine
+	content := title + "\n\n" + statusLine.String() + "\n" + m.textarea.View() + "\n\n" + publicToggle + "\n\n" + m.renderButtonLine(width) + "\n" + help + submitLine
 	return borderStyle.Width(width + 4).Render(content)
 }
 
@@ -826,6 +945,7 @@ func (m actionsModel) viewComment() string {
 		m.textarea.View() + "\n\n" +
 		publicToggle + "\n" +
 		ccLine + "\n\n" +
+		m.renderButtonLine(width) + "\n" +
 		help
 	if statusLine != "" {
 		content += "\n" + statusLine
@@ -846,7 +966,63 @@ func (m actionsModel) viewPicker(title string, options []string, selected int) s
 
 	help := dimStyle.Render("↑↓ select   enter confirm   esc cancel")
 
-	return borderStyle.Padding(1, 2).Render(b.String() + "\n\n" + help + statusLine)
+	return borderStyle.Padding(1, 2).Render(b.String() + "\n\n" + m.renderButtonLine(40) + "\n" + help + statusLine)
+}
+
+func (m actionsModel) buttonSpecs() []actionButtonSpec {
+	switch m.mode {
+	case actionComment:
+		specs := []actionButtonSpec{{Label: "Submit", Action: hitActionSubmit}, {Label: "Cancel", Action: hitActionCancel}}
+		if m.perms.CanPublicComment {
+			specs = append(specs, actionButtonSpec{Label: "Public/Internal", Action: hitActionToggle})
+		}
+		return specs
+	case actionApproval:
+		return []actionButtonSpec{
+			{Label: "Post", Action: hitActionSubmit},
+			{Label: "Cancel", Action: hitActionCancel},
+			{Label: "Public/Internal", Action: hitActionToggle},
+			{Label: "Status Up", Action: hitActionUp},
+			{Label: "Status Down", Action: hitActionDown},
+		}
+	case actionMerge:
+		label := "Preview"
+		if m.mergePreviewReady {
+			label = "Confirm Merge"
+		}
+		specs := []actionButtonSpec{{Label: label, Action: hitActionSubmit}, {Label: "Cancel", Action: hitActionCancel}}
+		if m.mergeCleanupPlan.Eligible {
+			specs = append(specs, actionButtonSpec{Label: "Toggle Cleanup", Action: hitActionToggle})
+		}
+		return specs
+	case actionStatus, actionPriority:
+		return []actionButtonSpec{
+			{Label: "Confirm", Action: hitActionSubmit},
+			{Label: "Cancel", Action: hitActionCancel},
+			{Label: "Up", Action: hitActionUp},
+			{Label: "Down", Action: hitActionDown},
+		}
+	case actionField:
+		return []actionButtonSpec{{Label: "Update", Action: hitActionSubmit}, {Label: "Cancel", Action: hitActionCancel}}
+	default:
+		return nil
+	}
+}
+
+func (m actionsModel) renderButtonLine(width int) string {
+	specs := m.buttonSpecs()
+	if len(specs) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		parts = append(parts, accentStyle.Render("[ "+spec.Label+" ]"))
+	}
+	line := strings.Join(parts, "  ")
+	if width <= 0 {
+		return line
+	}
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, line)
 }
 
 type pickerBuilder struct {

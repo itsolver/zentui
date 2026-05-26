@@ -11,6 +11,13 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
+const (
+	cmdPaletteBorderSize        = 1
+	cmdPalettePaddingX          = 3
+	cmdPalettePaddingY          = 1
+	cmdPaletteListContentOffset = 3
+)
+
 type cmdPaletteActionMsg struct {
 	action string
 }
@@ -37,6 +44,11 @@ type cmdPaletteModel struct {
 	cursor   int
 	width    int
 	height   int
+}
+
+type cmdPaletteVisibleRow struct {
+	index int
+	line  int
 }
 
 func newCmdPaletteModel() cmdPaletteModel {
@@ -70,6 +82,8 @@ func (m *cmdPaletteModel) open(state viewState, focus panelFocus, showDetail boo
 		items = append(items, cmdItem{"Generate draft", "d", "Ticket Actions", "draft"})
 		items = append(items, cmdItem{"Merge ticket", "M", "Ticket Actions", "merge"})
 		items = append(items, cmdItem{"Add comment", "c", "Ticket Actions", "comment"})
+		items = append(items, cmdItem{"Open assets folder", "assets", "Ticket Actions", "assets"})
+		items = append(items, cmdItem{"Edit first ticket field", "field", "Ticket Actions", "edit-field"})
 		if perms.CanChangeStatus {
 			items = append(items, cmdItem{"Change status", "s", "Ticket Actions", "status"})
 		}
@@ -181,6 +195,69 @@ func (m *cmdPaletteModel) refilter() {
 	}
 }
 
+func (m cmdPaletteModel) visibleCommandRows() []cmdPaletteVisibleRow {
+	rows, totalLines := m.commandRows()
+	maxVisible := m.maxVisibleLines()
+	if totalLines <= maxVisible {
+		return rows
+	}
+	cursorLine := 0
+	for _, row := range rows {
+		if row.index == m.cursor {
+			cursorLine = row.line
+			break
+		}
+	}
+	start := 0
+	if cursorLine >= maxVisible {
+		start = cursorLine - maxVisible + 1
+	}
+	end := start + maxVisible
+	if end > totalLines {
+		end = totalLines
+		start = end - maxVisible
+		if start < 0 {
+			start = 0
+		}
+	}
+	visible := make([]cmdPaletteVisibleRow, 0, len(rows))
+	for _, row := range rows {
+		if row.line >= start && row.line < end {
+			visible = append(visible, cmdPaletteVisibleRow{
+				index: row.index,
+				line:  row.line - start,
+			})
+		}
+	}
+	return visible
+}
+
+func (m cmdPaletteModel) commandRows() ([]cmdPaletteVisibleRow, int) {
+	rows := make([]cmdPaletteVisibleRow, 0, len(m.filtered))
+	line := 0
+	lastCategory := ""
+	for i, item := range m.filtered {
+		if item.category != lastCategory {
+			if lastCategory != "" {
+				line++ // blank line
+			}
+			lastCategory = item.category
+			line++ // category header
+		}
+		rows = append(rows, cmdPaletteVisibleRow{index: i, line: line})
+		line++
+	}
+	return rows, line
+}
+
+func (m cmdPaletteModel) maxVisibleLines() int {
+	maxVisible := m.height*9/10 - 6
+	if maxVisible < 10 {
+		maxVisible = 10
+	}
+	return maxVisible
+}
+
 // highlightMatches returns text with matched character positions rendered in accentStyle.
 func highlightMatches(text string, matchedIndexes []int) string {
 	if len(matchedIndexes) == 0 {
@@ -231,10 +308,7 @@ func (m cmdPaletteModel) View() string {
 	inputView := "\n" + m.input.View()
 
 	// Command list with category headers and spacing
-	maxVisible := m.height*9/10 - 6
-	if maxVisible < 10 {
-		maxVisible = 10
-	}
+	maxVisible := m.maxVisibleLines()
 
 	var lines []string
 	lastCategory := ""
@@ -322,5 +396,5 @@ func (m cmdPaletteModel) View() string {
 
 	content := titleBar + inputView + "\n\n" + listContent
 
-	return borderStyle.Width(w).Padding(1, 3).Render(content)
+	return borderStyle.Width(w).Padding(cmdPalettePaddingY, cmdPalettePaddingX).Render(content)
 }

@@ -66,3 +66,20 @@ func TestFormatElapsed(t *testing.T) {
 	assert.Equal(t, "1:01", formatElapsed(61))
 	assert.Equal(t, "1:00:01", formatElapsed(3601))
 }
+
+func TestOperatorModelTreatsUnknownFieldMetadataAsReadOnly(t *testing.T) {
+	m := newOperatorModel()
+	m.setSize(40, 20)
+	m.setTicket(
+		types.Ticket{ID: 123, CustomFields: []types.CustomField{{ID: 999, Value: "mystery"}}},
+		nil,
+		nil,
+		0,
+	)
+
+	rows := m.fieldRows()
+
+	assert.Len(t, rows, 1)
+	assert.False(t, rows[0].Editable)
+	assert.Equal(t, "read-only", rows[0].ReadOnly)
+}
