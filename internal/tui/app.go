@@ -674,6 +674,12 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleMouseClick(mouse.X, mouse.Y)
 		}
 
+	case tea.MouseReleaseMsg:
+		mouse := msg.Mouse()
+		if mouse.Button == tea.MouseLeft {
+			return m.handleMouseClick(mouse.X, mouse.Y)
+		}
+
 	case tea.MouseWheelMsg:
 		mouse := msg.Mouse()
 		return m.handleMouseWheel(mouse.X, mouse.Y, mouse.Button)

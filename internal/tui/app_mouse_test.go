@@ -43,6 +43,18 @@ func TestMouseClickQueueRowSelectsAndLoadsTicket(t *testing.T) {
 	assert.NotNil(t, cmd)
 }
 
+func TestMouseReleaseQueueRowSelectsAndLoadsTicket(t *testing.T) {
+	app := mouseTestApp(t)
+
+	model, cmd := app.Update(tea.MouseReleaseMsg(tea.Mouse{X: 3, Y: 5, Button: tea.MouseLeft}))
+	updated := model.(App)
+
+	assert.Equal(t, 1, updated.list.cursor)
+	assert.Equal(t, focusList, updated.focus)
+	assert.Equal(t, int64(2), updated.detail.expectedID)
+	assert.NotNil(t, cmd)
+}
+
 func TestMouseClickLastQueueRowUsesListCursorSideEffects(t *testing.T) {
 	app := mouseTestApp(t)
 	app.list.hasMore = true
