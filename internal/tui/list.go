@@ -502,14 +502,13 @@ func (m listModel) renderTicketRow(t types.Ticket, selected bool) string {
 	priority := styledPriorityIcon(t.Priority)
 	subject := strings.ReplaceAll(strings.ReplaceAll(t.Subject, "\n", " "), "\r", "")
 	ago := relativeTime(t.UpdatedAt)
-	createdAgo := relativeTime(t.CreatedAt)
 
 	// Truncate subject to fit
 	tagsWidth := 0
 	if m.showTags {
 		tagsWidth = 22 // 20 content + 2 spacing
 	}
-	maxSubject := m.width - 50 - tagsWidth
+	maxSubject := m.width - 42 - tagsWidth
 	if maxSubject < 20 {
 		maxSubject = 20
 	}
@@ -523,7 +522,6 @@ func (m listModel) renderTicketRow(t types.Ticket, selected bool) string {
 	prioCol := lipgloss.NewStyle().Width(3).Render(priority)
 	subjectCol := lipgloss.NewStyle().Width(maxSubject).Render(subject)
 	agoCol := lipgloss.NewStyle().Width(10).Render(dimStyle.Render(ago))
-	createdAgoCol := dimStyle.Render(createdAgo)
 
 	var row string
 	if m.showTags {
@@ -533,9 +531,9 @@ func (m listModel) renderTicketRow(t types.Ticket, selected bool) string {
 			tags = string(tagsRunes[:19]) + "…"
 		}
 		tagsCol := dimStyle.Copy().Width(20).Render(tags)
-		row = pointer + idCol + " " + statusCol + " " + prioCol + " " + tagsCol + "  " + subjectCol + "  " + agoCol + " " + createdAgoCol
+		row = pointer + idCol + " " + statusCol + " " + prioCol + " " + tagsCol + "  " + subjectCol + "  " + agoCol
 	} else {
-		row = pointer + idCol + " " + statusCol + " " + prioCol + " " + subjectCol + "  " + agoCol + " " + createdAgoCol
+		row = pointer + idCol + " " + statusCol + " " + prioCol + " " + subjectCol + "  " + agoCol
 	}
 
 	if selected {
