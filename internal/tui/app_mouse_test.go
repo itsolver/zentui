@@ -9,6 +9,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -68,6 +69,21 @@ func TestMouseClickLastQueueRowUsesListCursorSideEffects(t *testing.T) {
 	assert.True(t, updated.list.loadingMore)
 }
 
+func TestMouseClickSelectedLoadedQueueRowDoesNotReloadDetail(t *testing.T) {
+	app := mouseTestApp(t)
+	app.list.cursor = 0
+	app.detail.ticket = &types.Ticket{ID: 1, Subject: "Loaded"}
+	app.detail.ready = true
+	rowRegion := requireQueueRegion(t, app.hitRegions(), 0)
+
+	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: rowRegion.X1, Y: rowRegion.Y1, Button: tea.MouseLeft}))
+	updated := model.(App)
+
+	assert.Nil(t, cmd)
+	require.NotNil(t, updated.detail.ticket)
+	assert.Equal(t, int64(1), updated.detail.ticket.ID)
+}
+
 func TestMouseClickFieldStartsInlineEditWithCurrentValue(t *testing.T) {
 	app := mouseTestApp(t)
 	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
@@ -95,6 +111,32 @@ func TestCommandBarFieldDoesNotUseStaleOperatorTicket(t *testing.T) {
 	assert.Nil(t, cmd)
 	assert.Equal(t, actionNone, updated.actions.mode)
 	assert.False(t, updated.operator.fieldEdit.active)
+}
+
+func TestMouseClickFieldIgnoresStaleOperatorTicket(t *testing.T) {
+	app := mouseTestApp(t)
+	app.list.cursor = 1
+	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
+
+	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: fieldRegion.X1, Y: fieldRegion.Y1, Button: tea.MouseLeft}))
+	updated := model.(App)
+
+	assert.Nil(t, cmd)
+	assert.False(t, updated.operator.fieldEdit.active)
+}
+
+func TestMouseClickAssetIgnoresStaleOperatorTicket(t *testing.T) {
+	app := mouseTestApp(t)
+	app.list.cursor = 1
+	var opened string
+	app.openPath = func(path string) { opened = path }
+	assetRegion := requireRegion(t, app.hitRegions(), hitAssetFile)
+
+	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: assetRegion.X1, Y: assetRegion.Y1, Button: tea.MouseLeft}))
+
+	assert.Nil(t, cmd)
+	assert.Empty(t, opened)
+	assert.IsType(t, App{}, model)
 }
 
 func TestSubmitInlineFieldEditWritesOnlySelectedCustomField(t *testing.T) {
@@ -324,6 +366,31 @@ func TestMouseClickCommandPaletteItemTriggersSelectedAction(t *testing.T) {
 
 	assert.False(t, updated.cmdPalette.active)
 	assert.True(t, updated.draftBusy)
+}
+
+func TestCommandPaletteHitRegionsUseVisibleScrolledRows(t *testing.T) {
+	app := mouseTestApp(t)
+	app.height = 14
+	_ = app.cmdPalette.open(app.state, app.focus, app.showDetail, app.list.hasMore, true, app.perms)
+	app.cmdPalette.width = app.width
+	app.cmdPalette.height = app.height
+	app.cmdPalette.cursor = len(app.cmdPalette.filtered) - 1
+	optionRegion := requirePaletteActionRegion(t, app, "quit")
+	overlay := app.cmdPalette.View()
+	top := (app.height - lipgloss.Height(overlay)) / 2
+	if top < 0 {
+		top = 0
+	}
+
+	assert.GreaterOrEqual(t, optionRegion.Y1, top)
+	assert.LessOrEqual(t, optionRegion.Y1, top+lipgloss.Height(overlay)-1)
+
+	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: optionRegion.X1, Y: optionRegion.Y1, Button: tea.MouseLeft}))
+	require.NotNil(t, cmd)
+	msg, ok := cmd().(cmdPaletteActionMsg)
+	require.True(t, ok, "expected cmdPaletteActionMsg")
+	assert.Equal(t, "quit", msg.action)
+	assert.IsType(t, App{}, model)
 }
 
 func TestDisabledHitRegionSetsNoticeNotMergeError(t *testing.T) {

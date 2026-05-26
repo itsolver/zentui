@@ -1583,12 +1583,18 @@ func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	case hitQueueRow:
 		return m.selectQueueIndex(region.TicketIndex)
 	case hitFieldEdit:
+		if !m.operatorMatchesActiveTicket() {
+			return m, nil
+		}
 		row, ok := m.operator.fieldRowByID(region.FieldID)
 		if !ok || !row.Editable {
 			return m, nil
 		}
 		return m.openInlineFieldEdit(row)
 	case hitAssetsFolder, hitAssetFile:
+		if !m.operatorMatchesActiveTicket() {
+			return m, nil
+		}
 		if region.Action == hitAssetsFolder && region.Path == "" && region.TicketID > 0 {
 			region.Path = m.ticketWorkDir(region.TicketID)
 		}
@@ -1759,6 +1765,14 @@ func (m App) handleMouseCommand(command string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m App) operatorMatchesActiveTicket() bool {
+	if m.operator.ticket == nil {
+		return false
+	}
+	ticket, ok := m.activeTicket()
+	return ok && ticket.ID == m.operator.ticket.ID
+}
+
 func (m App) openInlineFieldEdit(row operatorFieldRow) (App, tea.Cmd) {
 	if m.operator.ticket == nil {
 		return m, nil
@@ -1823,11 +1837,16 @@ func (m App) selectQueueIndex(index int) (tea.Model, tea.Cmd) {
 	if index < 0 || index >= len(m.list.items) {
 		return m, nil
 	}
+	wasSelected := index == m.list.cursor
+	ticketID := m.list.items[index].ID
+	detailAlreadyLoaded := m.detail.ticket != nil && m.detail.ticket.ID == ticketID
 	m.focus = focusList
 	var cursorCmd tea.Cmd
 	m.list, cursorCmd = m.list.setCursor(index)
-	ticketID := m.list.items[index].ID
 	delete(m.list.newTicketIDs, ticketID)
+	if wasSelected && detailAlreadyLoaded && (m.state == splitView || m.state == detailView) {
+		return m, cursorCmd
+	}
 	m.operator.focusTicketID(ticketID)
 	if m.state == listView {
 		if m.width >= 120 {
@@ -2010,25 +2029,17 @@ func (m App) commandPaletteHitRegions() []hitRegion {
 		{Action: hitActionCancel, X1: left + overlayWidth - 8, Y1: top, X2: left + overlayWidth - 2, Y2: top + 2},
 	}
 
-	y := top + 5
-	lastCategory := ""
-	for i, item := range m.cmdPalette.filtered {
-		if item.category != lastCategory {
-			if lastCategory != "" {
-				y++
-			}
-			lastCategory = item.category
-			y++
-		}
+	listTop := top + 5
+	for _, row := range m.cmdPalette.visibleCommandRows() {
+		y := listTop + row.line
 		regions = append(regions, hitRegion{
 			Action:      hitActionOption,
 			X1:          left + 2,
 			Y1:          y,
 			X2:          left + overlayWidth - 3,
 			Y2:          y,
-			TicketIndex: i,
+			TicketIndex: row.index,
 		})
-		y++
 	}
 	return regions
 }
