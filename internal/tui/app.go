@@ -711,6 +711,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			current.Status,
 			m.operator.elapsedSeconds(),
 			existingTotal,
+			current.UpdatedAt,
 			msg.output.ReasoningSummary,
 		)
 		return m, cmd

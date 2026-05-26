@@ -120,6 +120,7 @@ func (m operatorModel) View() string {
 	if m.timerPaused {
 		b.WriteString(commentTimeStyle.Render("paused") + "\n")
 	}
+	b.WriteString(m.renderLine("Time spent", formatElapsed(m.totalElapsedSeconds())))
 	b.WriteString("\n")
 
 	if requester, ok := m.users[m.ticket.RequesterID]; ok {
@@ -170,6 +171,9 @@ func (m operatorModel) View() string {
 			if label == "" {
 				label = fmt.Sprintf("%d", field.ID)
 			}
+			if shouldHideOperatorField(field.ID, label) {
+				continue
+			}
 			b.WriteString(m.renderLine(label, fmt.Sprint(field.Value)))
 		}
 	}
@@ -191,6 +195,26 @@ func (m operatorModel) renderLine(label, value string) string {
 		value = string(runes[:width-1]) + "…"
 	}
 	return labelStyle.Render(label+":") + " " + valueStyle.Render(value) + "\n"
+}
+
+func (m operatorModel) totalElapsedSeconds() int {
+	if m.ticket == nil {
+		return m.elapsedSeconds()
+	}
+	return triage.ExistingTotalSeconds(*m.ticket) + m.elapsedSeconds()
+}
+
+func shouldHideOperatorField(id int64, label string) bool {
+	switch id {
+	case triage.TimeSpentLastUpdateFieldID, triage.TimeSpentTotalFieldID:
+		return true
+	}
+	switch strings.ToLower(strings.Join(strings.Fields(label), " ")) {
+	case "calendar event invite requester", "calendar event invite ccs":
+		return true
+	default:
+		return false
+	}
 }
 
 func formatElapsed(seconds int) string {

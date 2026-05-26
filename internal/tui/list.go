@@ -498,8 +498,8 @@ func (m listModel) renderTicketRow(t types.Ticket, selected bool) string {
 	}
 
 	id := fmt.Sprintf("#%d", t.ID)
-	status := styledStatus(t.Status)
-	priority := styledPriority(t.Priority)
+	status := styledStatusIcon(t.Status)
+	priority := styledPriorityIcon(t.Priority)
 	subject := strings.ReplaceAll(strings.ReplaceAll(t.Subject, "\n", " "), "\r", "")
 	ago := relativeTime(t.UpdatedAt)
 	createdAgo := relativeTime(t.CreatedAt)
@@ -509,7 +509,7 @@ func (m listModel) renderTicketRow(t types.Ticket, selected bool) string {
 	if m.showTags {
 		tagsWidth = 22 // 20 content + 2 spacing
 	}
-	maxSubject := m.width - 67 - tagsWidth
+	maxSubject := m.width - 50 - tagsWidth
 	if maxSubject < 20 {
 		maxSubject = 20
 	}
@@ -519,8 +519,8 @@ func (m listModel) renderTicketRow(t types.Ticket, selected bool) string {
 	}
 
 	idCol := lipgloss.NewStyle().Width(7).Render(id)
-	statusCol := lipgloss.NewStyle().Width(12).Render(status)
-	prioCol := lipgloss.NewStyle().Width(11).Render(priority)
+	statusCol := lipgloss.NewStyle().Width(3).Render(status)
+	prioCol := lipgloss.NewStyle().Width(3).Render(priority)
 	subjectCol := lipgloss.NewStyle().Width(maxSubject).Render(subject)
 	agoCol := lipgloss.NewStyle().Width(10).Render(dimStyle.Render(ago))
 	createdAgoCol := dimStyle.Render(createdAgo)
