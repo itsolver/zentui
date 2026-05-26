@@ -26,15 +26,18 @@ type Ticket struct {
 }
 
 type Comment struct {
-	ID          int64        `json:"id,omitempty"`
-	Body        string       `json:"body"`
-	HTMLBody    string       `json:"html_body,omitempty"`
-	PlainBody   string       `json:"plain_body,omitempty"`
-	Type        string       `json:"type,omitempty"`
-	Public      *bool        `json:"public,omitempty"`
-	AuthorID    int64        `json:"author_id,omitempty"`
-	Attachments []Attachment `json:"attachments,omitempty"`
-	CreatedAt   time.Time    `json:"created_at,omitempty"`
+	ID          int64            `json:"id,omitempty"`
+	AuditID     int64            `json:"audit_id,omitempty"`
+	Body        string           `json:"body"`
+	HTMLBody    string           `json:"html_body,omitempty"`
+	PlainBody   string           `json:"plain_body,omitempty"`
+	Type        string           `json:"type,omitempty"`
+	Public      *bool            `json:"public,omitempty"`
+	AuthorID    int64            `json:"author_id,omitempty"`
+	Attachments []Attachment     `json:"attachments,omitempty"`
+	CreatedAt   time.Time        `json:"created_at,omitempty"`
+	Metadata    *CommentMetadata `json:"metadata,omitempty"`
+	Via         *CommentVia      `json:"via,omitempty"`
 }
 
 type Attachment struct {
@@ -71,6 +74,63 @@ type CommentPage struct {
 	Users    []User    `json:"users,omitempty"`
 	Meta     PageMeta  `json:"meta"`
 	Links    PageLinks `json:"links"`
+}
+
+type CommentMetadata struct {
+	Via *CommentVia `json:"via,omitempty"`
+}
+
+type CommentVia struct {
+	Channel interface{}      `json:"channel,omitempty"`
+	Source  CommentViaSource `json:"source,omitempty"`
+}
+
+type CommentViaSource struct {
+	From CommentViaParties `json:"from,omitempty"`
+	To   CommentViaParties `json:"to,omitempty"`
+	Rel  string            `json:"rel,omitempty"`
+}
+
+type CommentViaParties []CommentViaParty
+
+type CommentViaParty struct {
+	ID      interface{} `json:"id,omitempty"`
+	Name    string      `json:"name,omitempty"`
+	Address string      `json:"address,omitempty"`
+	Email   string      `json:"email,omitempty"`
+	Title   string      `json:"title,omitempty"`
+}
+
+func (p *CommentViaParties) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		*p = nil
+		return nil
+	}
+
+	var list []CommentViaParty
+	if err := json.Unmarshal(data, &list); err == nil {
+		*p = list
+		return nil
+	}
+
+	var single CommentViaParty
+	if err := json.Unmarshal(data, &single); err == nil {
+		*p = []CommentViaParty{single}
+		return nil
+	}
+
+	var name string
+	if err := json.Unmarshal(data, &name); err == nil {
+		*p = []CommentViaParty{{Name: name}}
+		return nil
+	}
+
+	var raw interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	*p = []CommentViaParty{{Name: fmt.Sprint(raw)}}
+	return nil
 }
 
 type ListCommentsOptions struct {

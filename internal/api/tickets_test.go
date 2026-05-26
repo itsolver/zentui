@@ -239,6 +239,12 @@ func TestTicketService_ListComments_WithUsers(t *testing.T) {
 	require.Len(t, page.Users, 2)
 	assert.Equal(t, "Alice Agent", page.Users[0].Name)
 	assert.Equal(t, "bob@example.com", page.Users[1].Email)
+	assert.Equal(t, int64(101), page.Comments[0].AuditID)
+	require.NotNil(t, page.Comments[0].Metadata)
+	require.NotNil(t, page.Comments[0].Metadata.Via)
+	assert.Equal(t, "email", page.Comments[0].Metadata.Via.Channel)
+	require.Len(t, page.Comments[0].Metadata.Via.Source.To, 1)
+	assert.Equal(t, "Bob Customer", page.Comments[0].Metadata.Via.Source.To[0].Name)
 }
 
 func TestTicketService_ListAudits(t *testing.T) {
