@@ -141,6 +141,155 @@ func renderTimeline(nodes []TimelineNode, users map[int64]types.User, width int)
 	return b.String()
 }
 
+func renderConversation(comments []types.Comment, ticket types.Ticket, users map[int64]types.User, width int) string {
+	if len(comments) == 0 {
+		return ""
+	}
+
+	if width < 40 {
+		width = 40
+	}
+	bodyWidth := width - 4
+	if bodyWidth < 20 {
+		bodyWidth = 20
+	}
+
+	var b strings.Builder
+	for i, comment := range comments {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+
+		author := timelineUserName(comment.AuthorID, users)
+		headerParts := []string{commentAuthorStyle.Render(author)}
+		if channel := commentChannel(comment); channel != "" {
+			headerParts = append(headerParts, commentTimeStyle.Render(channel))
+		}
+		if !comment.CreatedAt.IsZero() {
+			headerParts = append(headerParts, commentTimeStyle.Render(relativeTime(comment.CreatedAt)))
+		}
+		if !commentIsPublic(comment) {
+			headerParts = append(headerParts, internalNoteStyle.Render("internal note"))
+		}
+		b.WriteString(strings.Join(headerParts, "  ·  ") + "\n")
+
+		if recipients := commentRecipients(comment, ticket, users); recipients != "" {
+			b.WriteString(commentAuthorStyle.Render("To:") + " " + valueStyle.Render(recipients) + "\n")
+		}
+
+		body := commentPlainBody(comment)
+		rendered := renderMarkdown(comment.HTMLBody, body, bodyWidth)
+		rendered = strings.TrimSpace(rendered)
+		if rendered == "" {
+			rendered = dimStyle.Render("(empty comment)")
+		}
+
+		cardStyle := conversationCustomerStyle
+		if commentIsAgent(comment, ticket, users) {
+			cardStyle = conversationAgentStyle
+		}
+		if !commentIsPublic(comment) {
+			cardStyle = conversationInternalStyle
+		}
+		b.WriteString(cardStyle.Width(width-2).Render(rendered) + "\n")
+
+		for _, a := range comment.Attachments {
+			icon := "📎"
+			style := attachmentStyle
+			if a.IsImage() {
+				icon = "📷"
+				style = attachmentImageStyle
+			}
+			b.WriteString("  " + style.Render(fmt.Sprintf("%s %s (%s)", icon, a.FileName, a.HumanSize())) + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func commentPlainBody(comment types.Comment) string {
+	if comment.PlainBody != "" {
+		return comment.PlainBody
+	}
+	return comment.Body
+}
+
+func commentIsPublic(comment types.Comment) bool {
+	return comment.Public == nil || *comment.Public
+}
+
+func commentIsAgent(comment types.Comment, ticket types.Ticket, users map[int64]types.User) bool {
+	if u, ok := users[comment.AuthorID]; ok {
+		return u.Role != "" && u.Role != "end-user"
+	}
+	return comment.AuthorID != 0 && comment.AuthorID != ticket.RequesterID
+}
+
+func commentChannel(comment types.Comment) string {
+	via := commentVia(comment)
+	if via == nil || via.Channel == nil {
+		return ""
+	}
+	channel := fmt.Sprint(via.Channel)
+	channel = strings.Trim(channel, `" `)
+	channel = strings.ReplaceAll(channel, "_", " ")
+	if channel == "" || channel == "<nil>" {
+		return ""
+	}
+	if strings.HasPrefix(strings.ToLower(channel), "via ") {
+		return channel
+	}
+	return "via " + channel
+}
+
+func commentVia(comment types.Comment) *types.CommentVia {
+	if comment.Metadata != nil && comment.Metadata.Via != nil {
+		return comment.Metadata.Via
+	}
+	return comment.Via
+}
+
+func commentRecipients(comment types.Comment, ticket types.Ticket, users map[int64]types.User) string {
+	if via := commentVia(comment); via != nil {
+		if recipients := formatCommentParties(via.Source.To); recipients != "" {
+			return recipients
+		}
+	}
+
+	if commentIsAgent(comment, ticket, users) {
+		return timelineUserName(ticket.RequesterID, users)
+	}
+	if ticket.AssigneeID != 0 {
+		return timelineUserName(ticket.AssigneeID, users)
+	}
+	return "Support"
+}
+
+func formatCommentParties(parties []types.CommentViaParty) string {
+	if len(parties) == 0 {
+		return ""
+	}
+	values := make([]string, 0, len(parties))
+	for _, party := range parties {
+		name := strings.TrimSpace(party.Name)
+		address := strings.TrimSpace(party.Address)
+		if address == "" {
+			address = strings.TrimSpace(party.Email)
+		}
+		if name == "" {
+			name = strings.TrimSpace(party.Title)
+		}
+		switch {
+		case name != "" && address != "":
+			values = append(values, fmt.Sprintf("%s <%s>", name, address))
+		case name != "":
+			values = append(values, name)
+		case address != "":
+			values = append(values, address)
+		}
+	}
+	return strings.Join(values, ", ")
+}
+
 // nodeIcon returns the icon for a timeline node based on its content.
 func nodeIcon(node TimelineNode) string {
 	// If there are status changes, use the target status icon

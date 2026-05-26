@@ -2,10 +2,21 @@
   "comments": [
     {
       "id": 1,
+      "audit_id": 101,
       "body": "First comment",
+      "plain_body": "First comment",
       "author_id": 10,
       "public": true,
-      "created_at": "2025-01-01T00:00:00Z"
+      "created_at": "2025-01-01T00:00:00Z",
+      "metadata": {
+        "via": {
+          "channel": "email",
+          "source": {
+            "from": {"name": "Alice Agent", "address": "alice@example.com"},
+            "to": {"name": "Bob Customer", "address": "bob@example.com"}
+          }
+        }
+      }
     },
     {
       "id": 2,

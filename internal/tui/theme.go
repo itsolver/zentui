@@ -96,6 +96,21 @@ var (
 				Foreground(ac("#D97706", "#FBBF24")).
 				Italic(true)
 
+	conversationCustomerStyle = lipgloss.NewStyle().
+					Foreground(ac("#1F2937", "#F3F4F6")).
+					Background(ac("#E8F6F7", "#123235")).
+					Padding(1, 2)
+
+	conversationAgentStyle = lipgloss.NewStyle().
+				Foreground(ac("#1F2937", "#F3F4F6")).
+				Background(ac("#F5F6F7", "#24272D")).
+				Padding(1, 2)
+
+	conversationInternalStyle = lipgloss.NewStyle().
+					Foreground(ac("#3F2A08", "#FEF3C7")).
+					Background(ac("#FEF3C7", "#4A3412")).
+					Padding(1, 2)
+
 	tagStyle = lipgloss.NewStyle().
 			Foreground(ac("#4338CA", "#A5B4FC")).
 			Background(ac("#EEF2FF", "#1E1B4B")).

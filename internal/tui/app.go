@@ -241,7 +241,7 @@ func (m App) autoLoadFirstTicket() tea.Cmd {
 	w := m.detailPanelWidth()
 	m.detail.width = w
 	m.detail.height = m.height
-	return tea.Batch(m.detail.spinner.Tick, m.detail.loadTicket(id), m.detail.loadAudits(id))
+	return m.detail.loadData(id)
 }
 
 func (m *App) reloadDetailIfVisible() []tea.Cmd {
@@ -254,7 +254,7 @@ func (m *App) reloadDetailIfVisible() []tea.Cmd {
 		m.detail.expectedID = id
 		m.detail.width = m.detailPanelWidth()
 		m.detail.height = m.height
-		return []tea.Cmd{m.detail.spinner.Tick, m.detail.loadTicket(id), m.detail.loadAudits(id)}
+		return []tea.Cmd{m.detail.loadData(id)}
 	}
 	// Clear detail panel when no items
 	m.detail = newDetailModel(m.tickets)
@@ -278,7 +278,7 @@ func (m *App) loadDetailForCursor() tea.Cmd {
 	w := m.detailPanelWidth()
 	m.detail.width = w
 	m.detail.height = m.height
-	return tea.Batch(m.detail.spinner.Tick, m.detail.loadTicket(id), m.detail.loadAudits(id))
+	return m.detail.loadData(id)
 }
 
 func (m App) windowTitle() string {
@@ -692,6 +692,10 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
 		if mouse.Button == tea.MouseLeft {
+			if !mouseActionModifier(mouse.Mod) {
+				m.mouseClickPending = false
+				return m, nil
+			}
 			m.mouseClickPending = true
 			return m.handleMouseClick(mouse.X, mouse.Y)
 		}
@@ -699,6 +703,10 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseReleaseMsg:
 		mouse := msg.Mouse()
 		if mouse.Button == tea.MouseLeft {
+			if !mouseActionModifier(mouse.Mod) {
+				m.mouseClickPending = false
+				return m, nil
+			}
 			if m.mouseClickPending {
 				m.mouseClickPending = false
 				return m, nil
@@ -794,7 +802,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detail.expectedID = msg.ticketID
 			m.detail.width = m.detailPanelWidth()
 			m.detail.height = m.height
-			cmds = append(cmds, m.detail.spinner.Tick, m.detail.loadTicket(msg.ticketID), m.detail.loadAudits(msg.ticketID))
+			cmds = append(cmds, m.detail.loadData(msg.ticketID))
 		}
 		return m, tea.Batch(cmds...)
 
@@ -870,6 +878,11 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			cmds = append(cmds, m.prepareAssets(m.detail.ticket.ID, msg.audits))
 		}
 		return m, tea.Batch(cmds...)
+
+	case commentsLoadedMsg:
+		var cmd tea.Cmd
+		m.detail, cmd = m.detail.Update(msg)
+		return m, cmd
 
 	case assetsPreparedMsg:
 		if msg.err == nil && (m.detail.ticket == nil || msg.ticketID == m.detail.ticket.ID) {
@@ -971,7 +984,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.detail.expectedID = msg.id
 			m.detail.width = m.detailPanelWidth()
 			m.detail.height = m.height
-			return m, tea.Batch(m.detail.spinner.Tick, m.detail.loadTicket(msg.id), m.detail.loadAudits(msg.id))
+			return m, m.detail.loadData(msg.id)
 		}
 		return m, nil
 
@@ -994,7 +1007,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.detail = newDetailModel(m.tickets)
 		m.detail.width = m.width
 		m.detail.height = m.height
-		return m, tea.Batch(m.detail.spinner.Tick, m.detail.loadTicket(msg.id), m.detail.loadAudits(msg.id))
+		return m, m.detail.loadData(msg.id)
 
 	case goBackMsg:
 		if m.prevState == kanbanView {
@@ -1595,6 +1608,13 @@ func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	case hitPaneOperator:
 		m.focus = focusOperator
 		return m, nil
+	case hitDetailToggle:
+		m.focus = focusDetail
+		m.detail.toggleEvents()
+		if m.detail.ready {
+			m.detail.viewport.SetContent(m.detail.renderContent())
+		}
+		return m, nil
 	case hitQueueRow:
 		return m.selectQueueIndex(region.TicketIndex)
 	case hitFieldEdit:
@@ -1621,6 +1641,10 @@ func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 		return m.handleMouseCommand(region.Command)
 	}
 	return m, nil
+}
+
+func mouseActionModifier(mod tea.KeyMod) bool {
+	return mod.Contains(tea.ModMeta) || mod.Contains(tea.ModSuper) || mod.Contains(tea.ModCtrl)
 }
 
 func (m App) handleMouseWheel(x, y int, button tea.MouseButton) (tea.Model, tea.Cmd) {
@@ -1879,14 +1903,14 @@ func (m App) selectQueueIndex(index int) (tea.Model, tea.Cmd) {
 		m.detail.expectedID = ticketID
 		m.detail.width = m.detailPanelWidth()
 		m.detail.height = m.height
-		return m, tea.Batch(cursorCmd, m.detail.spinner.Tick, m.detail.loadTicket(ticketID), m.detail.loadAudits(ticketID))
+		return m, tea.Batch(cursorCmd, m.detail.loadData(ticketID))
 	}
 	if m.state == detailView {
 		m.detail = newDetailModel(m.tickets)
 		m.detail.expectedID = ticketID
 		m.detail.width = m.width
 		m.detail.height = m.height
-		return m, tea.Batch(cursorCmd, m.detail.spinner.Tick, m.detail.loadTicket(ticketID), m.detail.loadAudits(ticketID))
+		return m, tea.Batch(cursorCmd, m.detail.loadData(ticketID))
 	}
 	return m, cursorCmd
 }
@@ -1949,8 +1973,43 @@ func (m App) hitRegions() []hitRegion {
 		operatorX := contentX + listWidth + detailWidth + 2
 		regions = append(regions, m.operator.hitRegions(operatorX, contentY, m.operatorPanelWidth(), "")...)
 	}
+	regions = append(regions, m.detailToggleHitRegions()...)
 	regions = append(regions, m.commandHitRegions()...)
 	return regions
+}
+
+func (m App) detailToggleHitRegions() []hitRegion {
+	if !m.detail.ready || m.detail.ticket == nil {
+		return nil
+	}
+	contentX := 2
+	contentY := 2
+	var originX int
+	switch m.state {
+	case splitView:
+		if !m.showDetail {
+			return nil
+		}
+		originX = contentX + m.listPanelWidth() + 1
+	case detailView:
+		originX = contentX
+	default:
+		return nil
+	}
+	width := m.detail.viewportWidth()
+	labelWidth := len(m.detail.toggleLabel())
+	x2 := originX + width - 1
+	x1 := x2 - labelWidth + 1
+	if x1 < originX {
+		x1 = originX
+	}
+	return []hitRegion{{
+		Action: hitDetailToggle,
+		X1:     x1,
+		Y1:     contentY,
+		X2:     x2,
+		Y2:     contentY,
+	}}
 }
 
 func (m App) commandHitRegions() []hitRegion {
@@ -2236,17 +2295,17 @@ func (m App) helpBar() string {
 		left = "↑↓ navigate  enter view  d draft  M merge  / search  ctrl+p commands  q quit"
 	case detailView:
 		if len(m.detail.imageAttachments) > 0 {
-			left = "↑↓ scroll  d draft  M merge  i images  esc back  ctrl+p commands  q quit"
+			left = "↑↓ scroll  f events  d draft  M merge  i images  esc back  ctrl+p commands  q quit"
 		} else {
-			left = "↑↓ scroll  d draft  M merge  esc back  ctrl+p commands  q quit"
+			left = "↑↓ scroll  f events  d draft  M merge  esc back  ctrl+p commands  q quit"
 		}
 	case splitView:
 		if m.focus == focusList {
 			left = "↑↓ navigate  enter view  d draft  M merge  tab focus  ctrl+p commands  q quit"
 		} else if len(m.detail.imageAttachments) > 0 {
-			left = "↑↓ scroll  d draft  M merge  i images  tab focus  esc back  ctrl+p commands  q quit"
+			left = "↑↓ scroll  f events  d draft  M merge  i images  tab focus  esc back  ctrl+p commands  q quit"
 		} else {
-			left = "↑↓ scroll  d draft  M merge  tab focus  esc back  ctrl+p commands  q quit"
+			left = "↑↓ scroll  f events  d draft  M merge  tab focus  esc back  ctrl+p commands  q quit"
 		}
 	case kanbanView:
 		left = "←→ columns  ↑↓ navigate  enter view  d draft  M merge  w list  ctrl+p commands  q quit"
@@ -2265,7 +2324,7 @@ func (m App) helpBar() string {
 	if m.notice != "" {
 		left = dimStyle.Render("Notice: "+m.notice) + "  " + left
 	}
-	mouseActions := "open  field  assets  draft  merge  refresh  more  pause  reset  commands"
+	mouseActions := "cmd/ctrl-click: open  field  assets  draft  merge  refresh  more  pause  reset  commands"
 	if left != "" {
 		left = mouseActions + "  |  " + left
 	} else {

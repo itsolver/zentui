@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/stretchr/testify/assert"
@@ -16,6 +17,22 @@ import (
 	"github.com/itsolver/zentui/internal/triage"
 	"github.com/itsolver/zentui/internal/types"
 )
+
+func modifiedMouseClick(x, y int) tea.MouseClickMsg {
+	return mouseClickWithMod(x, y, tea.ModSuper)
+}
+
+func modifiedMouseRelease(x, y int) tea.MouseReleaseMsg {
+	return tea.MouseReleaseMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft, Mod: tea.ModSuper})
+}
+
+func mouseClickWithMod(x, y int, mod tea.KeyMod) tea.MouseClickMsg {
+	return tea.MouseClickMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft, Mod: mod})
+}
+
+func plainMouseClick(x, y int) tea.MouseClickMsg {
+	return tea.MouseClickMsg(tea.Mouse{X: x, Y: y, Button: tea.MouseLeft})
+}
 
 func TestAppViewEnablesMouseModeOnNormalOverlayAndCommandPalette(t *testing.T) {
 	app := mouseTestApp(t)
@@ -32,10 +49,57 @@ func TestAppViewEnablesMouseModeOnNormalOverlayAndCommandPalette(t *testing.T) {
 	assert.Equal(t, tea.MouseModeCellMotion, app.View().MouseMode)
 }
 
+func TestMouseActionModifierAcceptsCommandAndCtrl(t *testing.T) {
+	assert.True(t, mouseActionModifier(tea.ModSuper))
+	assert.True(t, mouseActionModifier(tea.ModMeta))
+	assert.True(t, mouseActionModifier(tea.ModCtrl))
+	assert.True(t, mouseActionModifier(tea.ModCtrl|tea.ModAlt))
+	assert.False(t, mouseActionModifier(0))
+	assert.False(t, mouseActionModifier(tea.ModAlt))
+}
+
+func TestPlainMouseClickDoesNotTriggerQueueOrCommands(t *testing.T) {
+	app := mouseTestApp(t)
+	rowRegion := requireQueueRegion(t, app.hitRegions(), 1)
+
+	model, cmd := app.Update(plainMouseClick(rowRegion.X1, rowRegion.Y1))
+	updated := model.(App)
+
+	assert.Nil(t, cmd)
+	assert.Equal(t, 0, updated.list.cursor)
+	assert.Equal(t, int64(0), updated.detail.expectedID)
+	assert.False(t, updated.mouseClickPending)
+
+	commandRegion := requireCommandRegion(t, updated.commandHitRegions(), "draft")
+	model, cmd = updated.Update(plainMouseClick(commandRegion.X1, commandRegion.Y1))
+	updated = model.(App)
+
+	assert.Nil(t, cmd)
+	assert.False(t, updated.draftBusy)
+	assert.False(t, updated.mouseClickPending)
+}
+
+func TestMetaAndCtrlMouseClicksTriggerCommands(t *testing.T) {
+	for name, mod := range map[string]tea.KeyMod{
+		"meta": tea.ModMeta,
+		"ctrl": tea.ModCtrl,
+	} {
+		t.Run(name, func(t *testing.T) {
+			app := mouseTestApp(t)
+			commandRegion := requireCommandRegion(t, app.commandHitRegions(), "draft")
+
+			model, _ := app.Update(mouseClickWithMod(commandRegion.X1, commandRegion.Y1, mod))
+			updated := model.(App)
+
+			assert.True(t, updated.draftBusy)
+		})
+	}
+}
+
 func TestMouseClickQueueRowSelectsAndLoadsTicket(t *testing.T) {
 	app := mouseTestApp(t)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: 3, Y: 5, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(3, 5))
 	updated := model.(App)
 
 	assert.Equal(t, 1, updated.list.cursor)
@@ -47,7 +111,7 @@ func TestMouseClickQueueRowSelectsAndLoadsTicket(t *testing.T) {
 func TestMouseReleaseQueueRowSelectsAndLoadsTicket(t *testing.T) {
 	app := mouseTestApp(t)
 
-	model, cmd := app.Update(tea.MouseReleaseMsg(tea.Mouse{X: 3, Y: 5, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseRelease(3, 5))
 	updated := model.(App)
 
 	assert.Equal(t, 1, updated.list.cursor)
@@ -62,7 +126,7 @@ func TestMouseClickLastQueueRowUsesListCursorSideEffects(t *testing.T) {
 	app.list.afterCursor = "next"
 	lastRegion := requireQueueRegion(t, app.hitRegions(), len(app.list.items)-1)
 
-	model, _ := app.Update(tea.MouseClickMsg(tea.Mouse{X: lastRegion.X1, Y: lastRegion.Y1, Button: tea.MouseLeft}))
+	model, _ := app.Update(modifiedMouseClick(lastRegion.X1, lastRegion.Y1))
 	updated := model.(App)
 
 	assert.Equal(t, len(app.list.items)-1, updated.list.cursor)
@@ -76,7 +140,7 @@ func TestMouseClickSelectedLoadedQueueRowDoesNotReloadDetail(t *testing.T) {
 	app.detail.ready = true
 	rowRegion := requireQueueRegion(t, app.hitRegions(), 0)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: rowRegion.X1, Y: rowRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(rowRegion.X1, rowRegion.Y1))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -88,7 +152,7 @@ func TestMouseClickFieldStartsInlineEditWithCurrentValue(t *testing.T) {
 	app := mouseTestApp(t)
 	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: fieldRegion.X1, Y: fieldRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(fieldRegion.X1, fieldRegion.Y1))
 	updated := model.(App)
 
 	assert.Equal(t, actionNone, updated.actions.mode)
@@ -105,7 +169,7 @@ func TestCommandBarFieldDoesNotUseStaleOperatorTicket(t *testing.T) {
 	app.list.cursor = 1
 	commandRegion := requireCommandRegion(t, app.commandHitRegions(), "edit-field")
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: commandRegion.X1, Y: commandRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(commandRegion.X1, commandRegion.Y1))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -119,7 +183,7 @@ func TestCommandBarFieldDoesNotOpenWhenOperatorPaneHidden(t *testing.T) {
 	app.showDetail = false
 	commandRegion := requireCommandRegion(t, app.commandHitRegions(), "edit-field")
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: commandRegion.X1, Y: commandRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(commandRegion.X1, commandRegion.Y1))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -131,7 +195,7 @@ func TestMouseClickFieldIgnoresStaleOperatorTicket(t *testing.T) {
 	app.list.cursor = 1
 	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: fieldRegion.X1, Y: fieldRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(fieldRegion.X1, fieldRegion.Y1))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -145,7 +209,7 @@ func TestMouseClickAssetIgnoresStaleOperatorTicket(t *testing.T) {
 	app.openPath = func(path string) { opened = path }
 	assetRegion := requireRegion(t, app.hitRegions(), hitAssetFile)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: assetRegion.X1, Y: assetRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(assetRegion.X1, assetRegion.Y1))
 
 	assert.Nil(t, cmd)
 	assert.Empty(t, opened)
@@ -156,7 +220,7 @@ func TestSubmitInlineFieldEditWritesOnlySelectedCustomField(t *testing.T) {
 	svc := &mouseTicketService{}
 	app := mouseTestAppWithService(t, svc)
 	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
-	model, _ := app.Update(tea.MouseClickMsg(tea.Mouse{X: fieldRegion.X1, Y: fieldRegion.Y1, Button: tea.MouseLeft}))
+	model, _ := app.Update(modifiedMouseClick(fieldRegion.X1, fieldRegion.Y1))
 	app = model.(App)
 	app.operator.fieldEdit.input.SetValue("Ad hoc")
 
@@ -181,7 +245,7 @@ func TestInvalidInlineFieldUpdateKeepsEditOpenWithTypedValue(t *testing.T) {
 	svc := &mouseTicketService{updateErr: errors.New("invalid custom field")}
 	app := mouseTestAppWithService(t, svc)
 	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
-	model, _ := app.Update(tea.MouseClickMsg(tea.Mouse{X: fieldRegion.X1, Y: fieldRegion.Y1, Button: tea.MouseLeft}))
+	model, _ := app.Update(modifiedMouseClick(fieldRegion.X1, fieldRegion.Y1))
 	app = model.(App)
 	app.operator.fieldEdit.input.SetValue("Bad value")
 
@@ -241,7 +305,7 @@ func TestMouseClickAssetOpensLocalPath(t *testing.T) {
 	app.openPath = func(path string) { opened = path }
 
 	assetRegion := requireRegion(t, app.hitRegions(), hitAssetFile)
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: assetRegion.X1, Y: assetRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(assetRegion.X1, assetRegion.Y1))
 
 	assert.Nil(t, cmd)
 	assert.Equal(t, app.operator.assets[0].LocalPath, opened)
@@ -254,10 +318,10 @@ func TestMousePressAndReleaseRunsClickActionOnce(t *testing.T) {
 	app.openPath = func(path string) { opened = append(opened, path) }
 	assetRegion := requireRegion(t, app.hitRegions(), hitAssetFile)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: assetRegion.X1, Y: assetRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(assetRegion.X1, assetRegion.Y1))
 	require.Nil(t, cmd)
 	app = model.(App)
-	model, cmd = app.Update(tea.MouseReleaseMsg(tea.Mouse{X: assetRegion.X1, Y: assetRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd = app.Update(modifiedMouseRelease(assetRegion.X1, assetRegion.Y1))
 	app = model.(App)
 
 	assert.Nil(t, cmd)
@@ -281,7 +345,7 @@ func TestMouseClickAssetsHeaderOpensTicketFolder(t *testing.T) {
 	app.openPath = func(path string) { opened = path }
 
 	folderRegion := requireRegion(t, app.hitRegions(), hitAssetsFolder)
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: folderRegion.X1, Y: folderRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(folderRegion.X1, folderRegion.Y1))
 
 	assert.Nil(t, cmd)
 	assert.NotEmpty(t, opened)
@@ -293,7 +357,7 @@ func TestMouseClickCommandBarDraftUsesDraftPath(t *testing.T) {
 	app := mouseTestApp(t)
 	commandRegion := requireCommandRegion(t, app.commandHitRegions(), "draft")
 
-	model, _ := app.Update(tea.MouseClickMsg(tea.Mouse{X: commandRegion.X1, Y: commandRegion.Y1, Button: tea.MouseLeft}))
+	model, _ := app.Update(modifiedMouseClick(commandRegion.X1, commandRegion.Y1))
 	updated := model.(App)
 
 	assert.True(t, updated.draftBusy)
@@ -304,7 +368,7 @@ func TestMouseClickIgnoresBaseRegionsWhenSearchOverlayActive(t *testing.T) {
 	app.searchM.active = true
 	rowRegion := requireQueueRegion(t, app.hitRegions(), 1)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: rowRegion.X1, Y: rowRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(rowRegion.X1, rowRegion.Y1))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -329,7 +393,7 @@ func TestMouseWheelAffectsOnlyPaneUnderPointer(t *testing.T) {
 func TestOperatorFocusDoesNotRouteArrowsToQueue(t *testing.T) {
 	app := mouseTestApp(t)
 	operatorPane := requireRegion(t, app.paneHitRegions(), hitPaneOperator)
-	model, _ := app.Update(tea.MouseClickMsg(tea.Mouse{X: operatorPane.X1, Y: operatorPane.Y1, Button: tea.MouseLeft}))
+	model, _ := app.Update(modifiedMouseClick(operatorPane.X1, operatorPane.Y1))
 	updated := model.(App)
 	require.Equal(t, focusOperator, updated.focus)
 
@@ -345,7 +409,7 @@ func TestMouseClickMergeSubmitKeepsExplicitPreviewStep(t *testing.T) {
 	app.actions.textarea.SetValue("2")
 	submitRegion := requireRegion(t, app.actionHitRegions(), hitActionSubmit)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: submitRegion.X1, Y: submitRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(submitRegion.X1, submitRegion.Y1))
 	updated := model.(App)
 
 	assert.Equal(t, actionMerge, updated.actions.mode)
@@ -362,7 +426,7 @@ func TestMouseClickMergeSuggestionSelectsTargetWithoutSubmitting(t *testing.T) {
 	}, 0)
 	optionRegion := requireActionOptionRegion(t, app.actionHitRegions(), 1)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: optionRegion.X1, Y: optionRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(optionRegion.X1, optionRegion.Y1))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -381,7 +445,7 @@ func TestMouseClickOutsideModalOptionBoundsDoesNotChangeSelection(t *testing.T) 
 	optionRegion := requireActionOptionRegion(t, app.actionHitRegions(), 1)
 	require.Greater(t, optionRegion.X1, 0)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: optionRegion.X1 - 1, Y: optionRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(optionRegion.X1-1, optionRegion.Y1))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -393,7 +457,7 @@ func TestMouseClickOutsideExplicitModalButtonDoesNotSubmit(t *testing.T) {
 	app := mouseTestApp(t)
 	app.actions, _ = app.actions.openApproval(1, app.perms, "Reply", "pending", "open", 0, 0, time.Now(), "")
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: app.width / 2, Y: app.height - 2, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(app.width/2, app.height-2))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -405,7 +469,7 @@ func TestMouseClickTopLeftDoesNotCloseCommandPalette(t *testing.T) {
 	app := mouseTestApp(t)
 	_ = app.cmdPalette.open(app.state, app.focus, app.showDetail, app.list.hasMore, true, app.perms)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: 0, Y: 0, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(0, 0))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -417,7 +481,7 @@ func TestMouseClickCommandPaletteItemTriggersSelectedAction(t *testing.T) {
 	_ = app.cmdPalette.open(app.state, app.focus, app.showDetail, app.list.hasMore, true, app.perms)
 	optionRegion := requirePaletteActionRegion(t, app, "draft")
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: optionRegion.X1, Y: optionRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(optionRegion.X1, optionRegion.Y1))
 	updated := model.(App)
 	require.NotNil(t, cmd)
 	model, _ = updated.Update(cmd())
@@ -444,7 +508,7 @@ func TestCommandPaletteHitRegionsUseVisibleScrolledRows(t *testing.T) {
 	assert.GreaterOrEqual(t, optionRegion.Y1, top)
 	assert.LessOrEqual(t, optionRegion.Y1, top+lipgloss.Height(overlay)-1)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: optionRegion.X1, Y: optionRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(optionRegion.X1, optionRegion.Y1))
 	require.NotNil(t, cmd)
 	msg, ok := cmd().(cmdPaletteActionMsg)
 	require.True(t, ok, "expected cmdPaletteActionMsg")
@@ -457,7 +521,7 @@ func TestDisabledHitRegionSetsNoticeNotMergeError(t *testing.T) {
 	app.operator.setAssets(triage.Manifest{TicketID: 1, Assets: []triage.AssetRecord{{Filename: "bad.bmp", Skipped: true, SkipReason: "unsupported image type"}}}, nil)
 	assetRegion := requireRegion(t, app.hitRegions(), hitAssetFile)
 
-	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: assetRegion.X1, Y: assetRegion.Y1, Button: tea.MouseLeft}))
+	model, cmd := app.Update(modifiedMouseClick(assetRegion.X1, assetRegion.Y1))
 	updated := model.(App)
 
 	assert.Nil(t, cmd)
@@ -472,6 +536,29 @@ func TestHitRegionsSkipQueueRowsWhileListLoading(t *testing.T) {
 	for _, region := range app.hitRegions() {
 		assert.NotEqual(t, hitQueueRow, region.Action)
 	}
+}
+
+func TestMouseClickDetailToggleSwitchesEvents(t *testing.T) {
+	app := mouseTestApp(t)
+	app.detail = newDetailModel(app.tickets)
+	app.detail.ticket = &types.Ticket{ID: 1, Subject: "Ticket", Status: "open"}
+	app.detail.ready = true
+	app.detail.loading = false
+	app.detail.width = app.detailPanelWidth()
+	app.detail.height = app.height
+	app.detail.commentsLoaded = true
+	app.detail.viewport = viewport.New(
+		viewport.WithWidth(app.detail.viewportWidth()),
+		viewport.WithHeight(app.detail.viewportHeight()),
+	)
+	app.detail.viewport.SetContent(app.detail.renderContent())
+
+	region := requireRegion(t, app.hitRegions(), hitDetailToggle)
+	model, cmd := app.Update(modifiedMouseClick(region.X1, region.Y1))
+	updated := model.(App)
+
+	assert.Nil(t, cmd)
+	assert.True(t, updated.detail.showEvents)
 }
 
 func requireActionOptionRegion(t *testing.T, regions []hitRegion, index int) hitRegion {

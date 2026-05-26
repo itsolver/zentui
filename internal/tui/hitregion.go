@@ -6,6 +6,7 @@ const (
 	hitPaneList     hitAction = "pane:list"
 	hitPaneDetail   hitAction = "pane:detail"
 	hitPaneOperator hitAction = "pane:operator"
+	hitDetailToggle hitAction = "detail:toggle-events"
 	hitQueueRow     hitAction = "queue:row"
 	hitFieldEdit    hitAction = "field:edit"
 	hitAssetsFolder hitAction = "assets:folder"
