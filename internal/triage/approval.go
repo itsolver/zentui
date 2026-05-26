@@ -13,6 +13,7 @@ type ApprovalInput struct {
 	ConfirmedStatus      string
 	ElapsedSeconds       int
 	ExistingTotalSeconds int
+	UpdatedStamp         string
 }
 
 func BuildApprovalUpdate(input ApprovalInput) *types.UpdateTicketRequest {
@@ -21,7 +22,10 @@ func BuildApprovalUpdate(input ApprovalInput) *types.UpdateTicketRequest {
 			Body:   input.Body,
 			Public: &input.Public,
 		},
-		SafeUpdate: true,
+	}
+	if input.UpdatedStamp != "" {
+		req.SafeUpdate = true
+		req.UpdatedStamp = input.UpdatedStamp
 	}
 	if input.ConfirmedStatus != "" {
 		req.Status = input.ConfirmedStatus

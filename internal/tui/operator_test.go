@@ -3,6 +3,7 @@ package tui
 import (
 	"testing"
 
+	"github.com/itsolver/zentui/internal/triage"
 	"github.com/itsolver/zentui/internal/types"
 	"github.com/stretchr/testify/assert"
 )
@@ -24,6 +25,40 @@ func TestOperatorModelRendersRequesterOrgFieldsAndAssets(t *testing.T) {
 	assert.Contains(t, view, "Acme")
 	assert.Contains(t, view, "Support Plan")
 	assert.Contains(t, view, "3")
+}
+
+func TestOperatorModelRendersTotalTimeAndHidesNoisyFields(t *testing.T) {
+	m := newOperatorModel()
+	m.setSize(60, 20)
+	m.setTicketFields([]types.TicketField{
+		{ID: triage.TimeSpentTotalFieldID, Title: "Total time spent"},
+		{ID: 100, Title: "Calendar event invite requester"},
+		{ID: 101, Title: "Calendar event invite CCs"},
+		{ID: 102, Title: "Support Plan"},
+	})
+	m.setTicket(
+		types.Ticket{
+			ID: 123,
+			CustomFields: []types.CustomField{
+				{ID: triage.TimeSpentTotalFieldID, Value: 120},
+				{ID: 100, Value: "yes"},
+				{ID: 101, Value: "yes"},
+				{ID: 102, Value: "Managed"},
+			},
+		},
+		nil,
+		nil,
+		0,
+	)
+
+	view := stripANSI(m.View())
+
+	assert.Contains(t, view, "Time spent")
+	assert.Contains(t, view, "2:00")
+	assert.Contains(t, view, "Support Plan")
+	assert.NotContains(t, view, "Calendar event invite requester")
+	assert.NotContains(t, view, "Calendar event invite CCs")
+	assert.NotContains(t, view, "Total time spent")
 }
 
 func TestFormatElapsed(t *testing.T) {

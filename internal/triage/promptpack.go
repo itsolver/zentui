@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
@@ -59,7 +60,7 @@ type MergeNormalizeResult struct {
 	RecommendedTargetID int64             `json:"recommended_target_id,omitempty"`
 }
 
-func BuildDraftPromptPack(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64, mode string, imageObservations any) (*PromptPack, error) {
+func BuildDraftPromptPack(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64, mode string, imageObservations any, helperEnv ...string) (*PromptPack, error) {
 	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
 	if err != nil {
 		return nil, err
@@ -77,9 +78,9 @@ func BuildDraftPromptPack(ctx context.Context, customerSupportDir string, python
 	cmd.Dir = customerSupportDir
 	cmd.Stdin = bytes.NewReader(body)
 
-	out, err := cmd.Output()
+	out, err := runPromptPackHelper(cmd, "building draft prompt pack", helperEnv)
 	if err != nil {
-		return nil, fmt.Errorf("building draft prompt pack: %w", err)
+		return nil, err
 	}
 
 	var pack PromptPack
@@ -95,7 +96,7 @@ func BuildDraftPromptPack(ctx context.Context, customerSupportDir string, python
 	return &pack, nil
 }
 
-func BuildImagePromptPack(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64, filename string, sourceURL string, commentContext string) (*PromptPack, error) {
+func BuildImagePromptPack(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64, filename string, sourceURL string, commentContext string, helperEnv ...string) (*PromptPack, error) {
 	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
 	if err != nil {
 		return nil, err
@@ -110,9 +111,9 @@ func BuildImagePromptPack(ctx context.Context, customerSupportDir string, python
 	cmd := exec.CommandContext(ctx, pythonBin, args...)
 	cmd.Dir = customerSupportDir
 
-	out, err := cmd.Output()
+	out, err := runPromptPackHelper(cmd, "building image prompt pack", helperEnv)
 	if err != nil {
-		return nil, fmt.Errorf("building image prompt pack: %w", err)
+		return nil, err
 	}
 	var pack PromptPack
 	if err := json.Unmarshal(out, &pack); err != nil {
@@ -127,7 +128,7 @@ func BuildImagePromptPack(ctx context.Context, customerSupportDir string, python
 	return &pack, nil
 }
 
-func BuildMergePool(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64) (*MergePool, error) {
+func BuildMergePool(ctx context.Context, customerSupportDir string, pythonBin string, ticketID int64, helperEnv ...string) (*MergePool, error) {
 	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
 	if err != nil {
 		return nil, err
@@ -135,9 +136,9 @@ func BuildMergePool(ctx context.Context, customerSupportDir string, pythonBin st
 	cmd := exec.CommandContext(ctx, pythonBin, "scripts/local_triage_codex.py", "merge-pool", fmt.Sprint(ticketID))
 	cmd.Dir = customerSupportDir
 
-	out, err := cmd.Output()
+	out, err := runPromptPackHelper(cmd, "building merge candidate pool", helperEnv)
 	if err != nil {
-		return nil, fmt.Errorf("building merge candidate pool: %w", err)
+		return nil, err
 	}
 	var pool MergePool
 	if err := json.Unmarshal(out, &pool); err != nil {
@@ -152,7 +153,7 @@ func BuildMergePool(ctx context.Context, customerSupportDir string, pythonBin st
 	return &pool, nil
 }
 
-func BuildMergePromptPack(ctx context.Context, customerSupportDir string, pythonBin string, sourceTicket map[string]any, candidates []map[string]any) (*PromptPack, error) {
+func BuildMergePromptPack(ctx context.Context, customerSupportDir string, pythonBin string, sourceTicket map[string]any, candidates []map[string]any, helperEnv ...string) (*PromptPack, error) {
 	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
 	if err != nil {
 		return nil, err
@@ -168,9 +169,9 @@ func BuildMergePromptPack(ctx context.Context, customerSupportDir string, python
 	cmd.Dir = customerSupportDir
 	cmd.Stdin = bytes.NewReader(body)
 
-	out, err := cmd.Output()
+	out, err := runPromptPackHelper(cmd, "building merge prompt pack", helperEnv)
 	if err != nil {
-		return nil, fmt.Errorf("building merge prompt pack: %w", err)
+		return nil, err
 	}
 	var pack PromptPack
 	if err := json.Unmarshal(out, &pack); err != nil {
@@ -185,7 +186,7 @@ func BuildMergePromptPack(ctx context.Context, customerSupportDir string, python
 	return &pack, nil
 }
 
-func NormalizeMergePromptPackResult(ctx context.Context, customerSupportDir string, pythonBin string, codexPayload json.RawMessage, candidates []map[string]any) (MergeNormalizeResult, error) {
+func NormalizeMergePromptPackResult(ctx context.Context, customerSupportDir string, pythonBin string, codexPayload json.RawMessage, candidates []map[string]any, helperEnv ...string) (MergeNormalizeResult, error) {
 	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
 	if err != nil {
 		return MergeNormalizeResult{}, err
@@ -205,9 +206,9 @@ func NormalizeMergePromptPackResult(ctx context.Context, customerSupportDir stri
 	cmd.Dir = customerSupportDir
 	cmd.Stdin = bytes.NewReader(body)
 
-	out, err := cmd.Output()
+	out, err := runPromptPackHelper(cmd, "normalizing merge ranking", helperEnv)
 	if err != nil {
-		return MergeNormalizeResult{}, fmt.Errorf("normalizing merge ranking: %w", err)
+		return MergeNormalizeResult{}, err
 	}
 	var normalized MergeNormalizeResult
 	if err := json.Unmarshal(out, &normalized); err != nil {
@@ -216,7 +217,7 @@ func NormalizeMergePromptPackResult(ctx context.Context, customerSupportDir stri
 	return normalized, nil
 }
 
-func NormalizeDraftPromptPackResult(ctx context.Context, customerSupportDir string, pythonBin string, mode string, output DraftOutput) (DraftOutput, error) {
+func NormalizeDraftPromptPackResult(ctx context.Context, customerSupportDir string, pythonBin string, mode string, output DraftOutput, helperEnv ...string) (DraftOutput, error) {
 	customerSupportDir, pythonBin, err := resolvePromptPackRuntime(customerSupportDir, pythonBin)
 	if err != nil {
 		return DraftOutput{}, err
@@ -230,9 +231,9 @@ func NormalizeDraftPromptPackResult(ctx context.Context, customerSupportDir stri
 	cmd.Dir = customerSupportDir
 	cmd.Stdin = bytes.NewReader(body)
 
-	out, err := cmd.Output()
+	out, err := runPromptPackHelper(cmd, "normalizing draft", helperEnv)
 	if err != nil {
-		return DraftOutput{}, fmt.Errorf("normalizing draft: %w", err)
+		return DraftOutput{}, err
 	}
 
 	var normalized DraftOutput
@@ -251,4 +252,33 @@ func resolvePromptPackRuntime(customerSupportDir string, pythonBin string) (stri
 		pythonBin = filepath.Join(customerSupportDir, ".venv", "bin", "python")
 	}
 	return customerSupportDir, pythonBin, nil
+}
+
+func runPromptPackHelper(cmd *exec.Cmd, action string, helperEnv []string) ([]byte, error) {
+	if len(helperEnv) > 0 {
+		cmd.Env = append(os.Environ(), helperEnv...)
+	}
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = strings.TrimSpace(stdout.String())
+		}
+		if detail != "" {
+			return nil, fmt.Errorf("%s: %w: %s", action, err, truncateHelperOutput(detail))
+		}
+		return nil, fmt.Errorf("%s: %w", action, err)
+	}
+	return stdout.Bytes(), nil
+}
+
+func truncateHelperOutput(value string) string {
+	const maxLen = 1200
+	if len(value) <= maxLen {
+		return value
+	}
+	return strings.TrimSpace(value[:maxLen]) + "..."
 }

@@ -106,6 +106,7 @@ type App struct {
 	showDetail  bool
 	version     string
 	cursorSeq   uint64
+	promptEnv   []string
 	openPath    func(string)
 	notice      string
 }
@@ -118,6 +119,7 @@ type AppOptions struct {
 	CodexReasoning      string
 	PythonBin           string
 	WorkDir             string
+	PromptPackEnv       []string
 	HTTPClient          *http.Client
 	UntrustedHTTPClient *http.Client
 	TrustedHosts        []string
@@ -154,6 +156,7 @@ func NewAppWithOptions(tickets zendesk.TicketService, search zendesk.SearchServi
 		codex:      codex,
 		workCache:  triage.WorkCache{Root: opts.WorkDir, HTTPClient: opts.HTTPClient, UntrustedHTTPClient: opts.UntrustedHTTPClient, TrustedHosts: opts.TrustedHosts},
 		pythonBin:  opts.PythonBin,
+		promptEnv:  append([]string(nil), opts.PromptPackEnv...),
 		openPath:   browser.Open,
 	}
 }
@@ -325,9 +328,10 @@ func (m App) generateDraft(ticket types.Ticket) tea.Cmd {
 	codex := m.codex
 	cache := m.workCache
 	pythonBin := m.pythonBin
+	promptEnv := append([]string(nil), m.promptEnv...)
 	return func() tea.Msg {
 		analysis, _ := cache.ReadImageAnalysis(ticket.ID)
-		pack, err := triage.BuildDraftPromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, ticket.ID, "public", analysis)
+		pack, err := triage.BuildDraftPromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, ticket.ID, "public", analysis, promptEnv...)
 		if err != nil {
 			return draftErrMsg{err: err}
 		}
@@ -345,7 +349,7 @@ func (m App) generateDraft(ticket types.Ticket) tea.Cmd {
 		if err != nil {
 			return draftErrMsg{err: err}
 		}
-		normalized, err := triage.NormalizeDraftPromptPackResult(context.Background(), codex.CustomerSupportDir, pythonBin, pack.Mode, output)
+		normalized, err := triage.NormalizeDraftPromptPackResult(context.Background(), codex.CustomerSupportDir, pythonBin, pack.Mode, output, promptEnv...)
 		if err != nil {
 			return draftErrMsg{err: err}
 		}
@@ -357,6 +361,7 @@ func (m App) prepareAssets(ticketID int64, audits []types.Audit) tea.Cmd {
 	cache := m.workCache
 	codex := m.codex
 	pythonBin := m.pythonBin
+	promptEnv := append([]string(nil), m.promptEnv...)
 	return func() tea.Msg {
 		if ticketID == 0 {
 			return nil
@@ -382,7 +387,7 @@ func (m App) prepareAssets(ticketID int64, audits []types.Audit) tea.Cmd {
 			if asset.Skipped || asset.SHA256 == "" || analysis[asset.SHA256].Summary != "" {
 				continue
 			}
-			pack, err := triage.BuildImagePromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, ticketID, asset.Filename, asset.SourceURL, "")
+			pack, err := triage.BuildImagePromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, ticketID, asset.Filename, asset.SourceURL, "", promptEnv...)
 			if err != nil {
 				return assetsPreparedMsg{ticketID: ticketID, manifest: manifest, analysis: analysis, err: err}
 			}
@@ -419,15 +424,16 @@ func (m App) prepareAssets(ticketID int64, audits []types.Audit) tea.Cmd {
 func (m App) generateMergeSuggestions(ticket types.Ticket) tea.Cmd {
 	codex := m.codex
 	pythonBin := m.pythonBin
+	promptEnv := append([]string(nil), m.promptEnv...)
 	return func() tea.Msg {
-		pool, err := triage.BuildMergePool(context.Background(), codex.CustomerSupportDir, pythonBin, ticket.ID)
+		pool, err := triage.BuildMergePool(context.Background(), codex.CustomerSupportDir, pythonBin, ticket.ID, promptEnv...)
 		if err != nil {
 			return mergePrepareErrMsg{err: err}
 		}
 		if pool.Status != "success" || len(pool.Candidates) == 0 {
 			return mergePreparedMsg{ticketID: ticket.ID}
 		}
-		pack, err := triage.BuildMergePromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, pool.SourceTicket, pool.Candidates)
+		pack, err := triage.BuildMergePromptPack(context.Background(), codex.CustomerSupportDir, pythonBin, pool.SourceTicket, pool.Candidates, promptEnv...)
 		if err != nil {
 			return mergePrepareErrMsg{err: err}
 		}
@@ -435,7 +441,7 @@ func (m App) generateMergeSuggestions(ticket types.Ticket) tea.Cmd {
 		if err != nil {
 			return mergePrepareErrMsg{err: err}
 		}
-		normalized, err := triage.NormalizeMergePromptPackResult(context.Background(), codex.CustomerSupportDir, pythonBin, result.Output, pool.Candidates)
+		normalized, err := triage.NormalizeMergePromptPackResult(context.Background(), codex.CustomerSupportDir, pythonBin, result.Output, pool.Candidates, promptEnv...)
 		if err != nil {
 			return mergePrepareErrMsg{err: err}
 		}
@@ -812,6 +818,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			current.Status,
 			m.operator.elapsedSeconds(),
 			existingTotal,
+			current.UpdatedAt,
 			msg.output.ReasoningSummary,
 		)
 		return m, cmd

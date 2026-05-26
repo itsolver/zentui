@@ -187,6 +187,7 @@ func (m operatorModel) View() string {
 	if m.timerPaused {
 		b.WriteString(commentTimeStyle.Render("paused") + "\n")
 	}
+	b.WriteString(m.renderLine("Time spent", formatElapsed(m.totalElapsedSeconds())))
 	b.WriteString("\n")
 
 	if requester, ok := m.users[m.ticket.RequesterID]; ok {
@@ -257,7 +258,7 @@ func (m operatorModel) fieldRows() []operatorFieldRow {
 		if label == "" {
 			label = fmt.Sprintf("%d", field.ID)
 		}
-		if skipOperatorField(label) {
+		if shouldHideOperatorField(field.ID, label) {
 			continue
 		}
 		value := ""
@@ -291,12 +292,6 @@ func (m operatorModel) fieldRowByID(fieldID int64) (operatorFieldRow, bool) {
 		}
 	}
 	return operatorFieldRow{}, false
-}
-
-func skipOperatorField(label string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(label))
-	return strings.Contains(normalized, "calendar event invite requester") ||
-		strings.Contains(normalized, "calendar event invite ccs")
 }
 
 func isEditableTicketField(fieldType string) bool {
@@ -437,6 +432,26 @@ func (m operatorModel) renderInlineFieldEdit(row operatorFieldRow) string {
 
 func (m operatorModel) inlineFieldEditHeight() int {
 	return 3
+}
+
+func (m operatorModel) totalElapsedSeconds() int {
+	if m.ticket == nil {
+		return m.elapsedSeconds()
+	}
+	return triage.ExistingTotalSeconds(*m.ticket) + m.elapsedSeconds()
+}
+
+func shouldHideOperatorField(id int64, label string) bool {
+	switch id {
+	case triage.TimeSpentLastUpdateFieldID, triage.TimeSpentTotalFieldID:
+		return true
+	}
+	switch strings.ToLower(strings.Join(strings.Fields(label), " ")) {
+	case "calendar event invite requester", "calendar event invite ccs":
+		return true
+	default:
+		return false
+	}
 }
 
 func formatElapsed(seconds int) string {

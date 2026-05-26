@@ -290,7 +290,7 @@ func TestMouseClickMergeSuggestionSelectsTargetWithoutSubmitting(t *testing.T) {
 
 func TestMouseClickOutsideExplicitModalButtonDoesNotSubmit(t *testing.T) {
 	app := mouseTestApp(t)
-	app.actions, _ = app.actions.openApproval(1, app.perms, "Reply", "pending", "open", 0, 0, "")
+	app.actions, _ = app.actions.openApproval(1, app.perms, "Reply", "pending", "open", 0, 0, time.Now(), "")
 
 	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: app.width / 2, Y: app.height - 2, Button: tea.MouseLeft}))
 	updated := model.(App)

@@ -77,6 +77,8 @@ var tuiCmd = &cobra.Command{
 		var userSvc zendesk.UserService
 		var attachmentHTTPClient *http.Client
 		var untrustedAttachmentHTTPClient *http.Client
+		var creds *auth.ProfileCredentials
+		profile, _ := cmd.Flags().GetString("profile")
 		if store := demoStoreFromCtx(cmd.Context()); store != nil {
 			ticketSvc = demo.NewTicketService(store)
 			searchSvc = demo.NewSearchService(store)
@@ -94,16 +96,20 @@ var tuiCmd = &cobra.Command{
 			c := cache.New(60 * time.Second)
 			ticketSvc = cache.NewCachedTicketService(ticketSvc, c)
 			searchSvc = cache.NewCachedSearchService(searchSvc, c)
+			creds, _ = auth.ResolveCredentials(profile)
 		}
 
 		cfg := configFromCtx(cmd.Context())
-		profile, _ := cmd.Flags().GetString("profile")
 		subdomain := cfg.Subdomain
 		if subdomain == "" {
-			if creds, _ := auth.ResolveCredentials(profile); creds != nil {
+			if creds == nil {
+				creds, _ = auth.ResolveCredentials(profile)
+			}
+			if creds != nil {
 				subdomain = creds.Subdomain
 			}
 		}
+		promptPackEnv := zendeskPromptPackEnv(subdomain, creds)
 		var trustedAttachmentHosts []string
 		if subdomain != "" {
 			trustedAttachmentHosts = zendeskAttachmentHosts(subdomain)
@@ -127,6 +133,7 @@ var tuiCmd = &cobra.Command{
 			CodexReasoning:      codexReasoning,
 			PythonBin:           pythonBin,
 			WorkDir:             workDir,
+			PromptPackEnv:       promptPackEnv,
 			HTTPClient:          attachmentHTTPClient,
 			UntrustedHTTPClient: untrustedAttachmentHTTPClient,
 			TrustedHosts:        trustedAttachmentHosts,
@@ -138,6 +145,24 @@ var tuiCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+func zendeskPromptPackEnv(subdomain string, creds *auth.ProfileCredentials) []string {
+	if creds == nil || creds.Method != "token" {
+		return nil
+	}
+
+	env := make([]string, 0, 3)
+	if subdomain != "" {
+		env = append(env, "ZENDESK_SUBDOMAIN="+subdomain)
+	}
+	if creds.Email != "" {
+		env = append(env, "ZENDESK_EMAIL="+creds.Email)
+	}
+	if creds.APIToken != "" {
+		env = append(env, "ZENDESK_API_TOKEN="+creds.APIToken)
+	}
+	return env
 }
 
 func zendeskAttachmentHosts(subdomain string) []string {
