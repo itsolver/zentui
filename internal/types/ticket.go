@@ -139,6 +139,7 @@ type UpdateTicketRequest struct {
 	CustomFields            []CustomField       `json:"custom_fields,omitempty"`
 	AdditionalCollaborators []CollaboratorEntry `json:"additional_collaborators,omitempty"`
 	SafeUpdate              bool                `json:"safe_update,omitempty"`
+	UpdatedStamp            string              `json:"updated_stamp,omitempty"`
 }
 
 type TicketResult struct {

@@ -33,6 +33,36 @@ func TestBuildDraftPromptPackRequiresCustomerSupportDir(t *testing.T) {
 	assert.Contains(t, err.Error(), "customer-support directory is required")
 }
 
+func TestBuildDraftPromptPackIncludesHelperStderr(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "fake-helper")
+	require.NoError(t, os.WriteFile(helper, []byte(`#!/bin/sh
+echo "missing Zendesk credentials" >&2
+exit 1
+`), 0o700))
+
+	_, err := BuildDraftPromptPack(context.Background(), dir, helper, 123, "public", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "building draft prompt pack")
+	assert.Contains(t, err.Error(), "missing Zendesk credentials")
+}
+
+func TestBuildDraftPromptPackPassesHelperEnv(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "fake-helper")
+	require.NoError(t, os.WriteFile(helper, []byte(`#!/bin/sh
+cat >/dev/null
+test "$ZENDESK_SUBDOMAIN" = "itsolver" || exit 2
+echo '{"status":"success","kind":"draft","ticket_id":"123","mode":"public","schema":{"type":"object"},"prompt":"draft prompt"}'
+`), 0o700))
+
+	pack, err := BuildDraftPromptPack(context.Background(), dir, helper, 123, "public", nil, "ZENDESK_SUBDOMAIN=itsolver")
+
+	require.NoError(t, err)
+	assert.Equal(t, "draft prompt", pack.Prompt)
+}
+
 func TestNormalizeDraftPromptPackResultUsesHelper(t *testing.T) {
 	dir := t.TempDir()
 	helper := filepath.Join(dir, "fake-helper")

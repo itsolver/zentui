@@ -15,6 +15,7 @@ func TestBuildApprovalUpdateIncludesCommentStatusSafeUpdateAndTimeFields(t *test
 		ConfirmedStatus:      "solved",
 		ElapsedSeconds:       120,
 		ExistingTotalSeconds: 300,
+		UpdatedStamp:         "2026-05-26T01:23:45Z",
 	})
 
 	require.NotNil(t, req.Comment)
@@ -23,6 +24,7 @@ func TestBuildApprovalUpdateIncludesCommentStatusSafeUpdateAndTimeFields(t *test
 	assert.True(t, *req.Comment.Public)
 	assert.Equal(t, "solved", req.Status)
 	assert.True(t, req.SafeUpdate)
+	assert.Equal(t, "2026-05-26T01:23:45Z", req.UpdatedStamp)
 	require.Len(t, req.CustomFields, 2)
 	assert.Equal(t, TimeSpentLastUpdateFieldID, req.CustomFields[0].ID)
 	assert.Equal(t, 120, req.CustomFields[0].Value)
@@ -37,7 +39,8 @@ func TestBuildApprovalUpdateOmitsTimeFieldsWhenElapsedZero(t *testing.T) {
 	require.NotNil(t, req.Comment.Public)
 	assert.False(t, *req.Comment.Public)
 	assert.Empty(t, req.CustomFields)
-	assert.True(t, req.SafeUpdate)
+	assert.False(t, req.SafeUpdate)
+	assert.Empty(t, req.UpdatedStamp)
 }
 
 func TestExistingTotalSeconds(t *testing.T) {
