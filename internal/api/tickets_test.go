@@ -399,6 +399,10 @@ func TestTicketService_MergeTickets(t *testing.T) {
 		assert.Equal(t, []int64{101, 102}, body.IDs)
 		assert.Equal(t, "Closing duplicate.", body.SourceComment)
 		assert.Equal(t, "Merged duplicates.", body.TargetComment)
+		require.NotNil(t, body.SourceCommentIsPublic)
+		require.NotNil(t, body.TargetCommentIsPublic)
+		assert.False(t, *body.SourceCommentIsPublic)
+		assert.True(t, *body.TargetCommentIsPublic)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.Write([]byte(`{"ticket":{"id":100,"subject":"Survivor","status":"open","created_at":"2025-01-01T00:00:00Z","updated_at":"2025-01-01T00:00:00Z"}}`))
@@ -408,11 +412,17 @@ func TestTicketService_MergeTickets(t *testing.T) {
 	svc := NewTicketService(client)
 
 	result, err := svc.MergeTickets(context.Background(), 100, &types.MergeTicketsRequest{
-		IDs:           []int64{101, 102},
-		SourceComment: "Closing duplicate.",
-		TargetComment: "Merged duplicates.",
+		IDs:                   []int64{101, 102},
+		SourceComment:         "Closing duplicate.",
+		SourceCommentIsPublic: boolPtr(false),
+		TargetComment:         "Merged duplicates.",
+		TargetCommentIsPublic: boolPtr(true),
 	})
 	require.NoError(t, err)
 	require.NotNil(t, result.Ticket)
 	assert.Equal(t, int64(100), result.Ticket.ID)
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }

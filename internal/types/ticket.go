@@ -164,9 +164,11 @@ type GetTicketOptions struct {
 }
 
 type MergeTicketsRequest struct {
-	IDs           []int64 `json:"ids"`
-	SourceComment string  `json:"source_comment,omitempty"`
-	TargetComment string  `json:"target_comment,omitempty"`
+	IDs                   []int64 `json:"ids"`
+	SourceComment         string  `json:"source_comment,omitempty"`
+	SourceCommentIsPublic *bool   `json:"source_comment_is_public,omitempty"`
+	TargetComment         string  `json:"target_comment,omitempty"`
+	TargetCommentIsPublic *bool   `json:"target_comment_is_public,omitempty"`
 }
 
 type MergeTicketsResult struct {
