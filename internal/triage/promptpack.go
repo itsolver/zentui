@@ -10,7 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
+
+const promptPackHelperTimeout = 30 * time.Second
 
 type PromptPack struct {
 	Status   string          `json:"status"`
@@ -65,6 +68,8 @@ func BuildDraftPromptPack(ctx context.Context, customerSupportDir string, python
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := promptPackContext(ctx)
+	defer cancel()
 	payload := map[string]any{"mode": mode}
 	if imageObservations != nil {
 		payload["image_observations"] = imageObservations
@@ -78,7 +83,7 @@ func BuildDraftPromptPack(ctx context.Context, customerSupportDir string, python
 	cmd.Dir = customerSupportDir
 	cmd.Stdin = bytes.NewReader(body)
 
-	out, err := runPromptPackHelper(cmd, "building draft prompt pack", helperEnv)
+	out, err := runPromptPackHelper(ctx, cmd, "building draft prompt pack", helperEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -101,6 +106,8 @@ func BuildImagePromptPack(ctx context.Context, customerSupportDir string, python
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := promptPackContext(ctx)
+	defer cancel()
 	args := []string{"scripts/local_triage_codex.py", "image-pack", fmt.Sprint(ticketID), "--filename", filename}
 	if sourceURL != "" {
 		args = append(args, "--source-url", sourceURL)
@@ -111,7 +118,7 @@ func BuildImagePromptPack(ctx context.Context, customerSupportDir string, python
 	cmd := exec.CommandContext(ctx, pythonBin, args...)
 	cmd.Dir = customerSupportDir
 
-	out, err := runPromptPackHelper(cmd, "building image prompt pack", helperEnv)
+	out, err := runPromptPackHelper(ctx, cmd, "building image prompt pack", helperEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -133,10 +140,12 @@ func BuildMergePool(ctx context.Context, customerSupportDir string, pythonBin st
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := promptPackContext(ctx)
+	defer cancel()
 	cmd := exec.CommandContext(ctx, pythonBin, "scripts/local_triage_codex.py", "merge-pool", fmt.Sprint(ticketID))
 	cmd.Dir = customerSupportDir
 
-	out, err := runPromptPackHelper(cmd, "building merge candidate pool", helperEnv)
+	out, err := runPromptPackHelper(ctx, cmd, "building merge candidate pool", helperEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -158,6 +167,8 @@ func BuildMergePromptPack(ctx context.Context, customerSupportDir string, python
 	if err != nil {
 		return nil, err
 	}
+	ctx, cancel := promptPackContext(ctx)
+	defer cancel()
 	body, err := json.Marshal(map[string]any{
 		"source_ticket": sourceTicket,
 		"candidates":    candidates,
@@ -169,7 +180,7 @@ func BuildMergePromptPack(ctx context.Context, customerSupportDir string, python
 	cmd.Dir = customerSupportDir
 	cmd.Stdin = bytes.NewReader(body)
 
-	out, err := runPromptPackHelper(cmd, "building merge prompt pack", helperEnv)
+	out, err := runPromptPackHelper(ctx, cmd, "building merge prompt pack", helperEnv)
 	if err != nil {
 		return nil, err
 	}
@@ -191,6 +202,8 @@ func NormalizeMergePromptPackResult(ctx context.Context, customerSupportDir stri
 	if err != nil {
 		return MergeNormalizeResult{}, err
 	}
+	ctx, cancel := promptPackContext(ctx)
+	defer cancel()
 	var payload any
 	if err := json.Unmarshal(codexPayload, &payload); err != nil {
 		return MergeNormalizeResult{}, err
@@ -206,7 +219,7 @@ func NormalizeMergePromptPackResult(ctx context.Context, customerSupportDir stri
 	cmd.Dir = customerSupportDir
 	cmd.Stdin = bytes.NewReader(body)
 
-	out, err := runPromptPackHelper(cmd, "normalizing merge ranking", helperEnv)
+	out, err := runPromptPackHelper(ctx, cmd, "normalizing merge ranking", helperEnv)
 	if err != nil {
 		return MergeNormalizeResult{}, err
 	}
@@ -222,6 +235,8 @@ func NormalizeDraftPromptPackResult(ctx context.Context, customerSupportDir stri
 	if err != nil {
 		return DraftOutput{}, err
 	}
+	ctx, cancel := promptPackContext(ctx)
+	defer cancel()
 	body, err := json.Marshal(output)
 	if err != nil {
 		return DraftOutput{}, err
@@ -231,7 +246,7 @@ func NormalizeDraftPromptPackResult(ctx context.Context, customerSupportDir stri
 	cmd.Dir = customerSupportDir
 	cmd.Stdin = bytes.NewReader(body)
 
-	out, err := runPromptPackHelper(cmd, "normalizing draft", helperEnv)
+	out, err := runPromptPackHelper(ctx, cmd, "normalizing draft", helperEnv)
 	if err != nil {
 		return DraftOutput{}, err
 	}
@@ -254,7 +269,17 @@ func resolvePromptPackRuntime(customerSupportDir string, pythonBin string) (stri
 	return customerSupportDir, pythonBin, nil
 }
 
-func runPromptPackHelper(cmd *exec.Cmd, action string, helperEnv []string) ([]byte, error) {
+func promptPackContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return context.WithCancel(ctx)
+	}
+	return context.WithTimeout(ctx, promptPackHelperTimeout)
+}
+
+func runPromptPackHelper(ctx context.Context, cmd *exec.Cmd, action string, helperEnv []string) ([]byte, error) {
 	if len(helperEnv) > 0 {
 		cmd.Env = append(os.Environ(), helperEnv...)
 	}
@@ -267,12 +292,45 @@ func runPromptPackHelper(cmd *exec.Cmd, action string, helperEnv []string) ([]by
 		if detail == "" {
 			detail = strings.TrimSpace(stdout.String())
 		}
-		if detail != "" {
-			return nil, fmt.Errorf("%s: %w: %s", action, err, truncateHelperOutput(detail))
-		}
-		return nil, fmt.Errorf("%s: %w", action, err)
+		return nil, promptPackHelperError(ctx, action, err, detail)
 	}
 	return stdout.Bytes(), nil
+}
+
+func promptPackHelperError(ctx context.Context, action string, err error, detail string) error {
+	detail = strings.TrimSpace(detail)
+	if detail == "" && ctx != nil && ctx.Err() == context.DeadlineExceeded {
+		return fmt.Errorf("%s timed out after %s; check local Zendesk/Google credentials and try again", action, promptPackHelperTimeout)
+	}
+	if detail == "" {
+		return fmt.Errorf("%s: %w", action, err)
+	}
+	lower := strings.ToLower(detail)
+	switch {
+	case strings.Contains(lower, "reauthentication is needed") &&
+		strings.Contains(lower, "gcloud auth application-default login"):
+		return fmt.Errorf("%s: Google application-default credentials need reauthentication; run `gcloud auth application-default login`", action)
+	case strings.Contains(lower, "missing required zendesk environment variables"):
+		return fmt.Errorf("%s: Zendesk credentials were not passed to the helper; run `zentui auth status` or set ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, and ZENDESK_API_TOKEN", action)
+	case strings.Contains(lower, "cryptography.hazmat.bindings._rust") ||
+		strings.Contains(lower, "no module named 'cryptography") ||
+		strings.Contains(lower, "google-cloud-firestore is required"):
+		return fmt.Errorf("%s: customer-support Python environment is broken; refresh the virtualenv with `python3 -m pip install -r requirements.txt --upgrade`: %s", action, firstHelperDetailLine(detail))
+	case ctx != nil && ctx.Err() == context.DeadlineExceeded:
+		return fmt.Errorf("%s timed out after %s; check local Zendesk/Google credentials and try again: %s", action, promptPackHelperTimeout, firstHelperDetailLine(detail))
+	default:
+		return fmt.Errorf("%s: %w: %s", action, err, truncateHelperOutput(detail))
+	}
+}
+
+func firstHelperDetailLine(value string) string {
+	for _, line := range strings.Split(value, "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "Traceback ") && !strings.HasPrefix(line, "File ") {
+			return truncateHelperOutput(line)
+		}
+	}
+	return truncateHelperOutput(value)
 }
 
 func truncateHelperOutput(value string) string {

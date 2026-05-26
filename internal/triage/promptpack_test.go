@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -46,6 +47,51 @@ exit 1
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "building draft prompt pack")
 	assert.Contains(t, err.Error(), "missing Zendesk credentials")
+}
+
+func TestBuildDraftPromptPackClassifiesBrokenPythonEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "fake-helper")
+	require.NoError(t, os.WriteFile(helper, []byte(`#!/bin/sh
+echo "ImportError: cannot import name 'exceptions' from 'cryptography.hazmat.bindings._rust'" >&2
+exit 1
+`), 0o700))
+
+	_, err := BuildDraftPromptPack(context.Background(), dir, helper, 123, "public", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "customer-support Python environment is broken")
+	assert.NotContains(t, err.Error(), "Traceback")
+}
+
+func TestBuildDraftPromptPackClassifiesGcloudReauth(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "fake-helper")
+	require.NoError(t, os.WriteFile(helper, []byte(`#!/bin/sh
+echo "google.auth.exceptions.RefreshError: Reauthentication is needed. Please run gcloud auth application-default login to reauthenticate." >&2
+exit 1
+`), 0o700))
+
+	_, err := BuildDraftPromptPack(context.Background(), dir, helper, 123, "public", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "Google application-default credentials need reauthentication")
+	assert.Contains(t, err.Error(), "gcloud auth application-default login")
+}
+
+func TestBuildDraftPromptPackTimesOutHelper(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "fake-helper")
+	require.NoError(t, os.WriteFile(helper, []byte(`#!/bin/sh
+sleep 1
+`), 0o700))
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	_, err := BuildDraftPromptPack(ctx, dir, helper, 123, "public", nil)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timed out")
 }
 
 func TestBuildDraftPromptPackPassesHelperEnv(t *testing.T) {
