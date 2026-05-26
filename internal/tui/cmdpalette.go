@@ -70,6 +70,8 @@ func (m *cmdPaletteModel) open(state viewState, focus panelFocus, showDetail boo
 		items = append(items, cmdItem{"Generate draft", "d", "Ticket Actions", "draft"})
 		items = append(items, cmdItem{"Merge ticket", "M", "Ticket Actions", "merge"})
 		items = append(items, cmdItem{"Add comment", "c", "Ticket Actions", "comment"})
+		items = append(items, cmdItem{"Open assets folder", "assets", "Ticket Actions", "assets"})
+		items = append(items, cmdItem{"Edit first ticket field", "field", "Ticket Actions", "edit-field"})
 		if perms.CanChangeStatus {
 			items = append(items, cmdItem{"Change status", "s", "Ticket Actions", "status"})
 		}

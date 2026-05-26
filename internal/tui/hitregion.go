@@ -16,6 +16,7 @@ const (
 	hitActionToggle hitAction = "action:toggle"
 	hitActionUp     hitAction = "action:up"
 	hitActionDown   hitAction = "action:down"
+	hitActionOption hitAction = "action:option"
 )
 
 type hitRegion struct {

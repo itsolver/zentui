@@ -104,6 +104,20 @@ func TestMouseClickAssetOpensLocalPath(t *testing.T) {
 	assert.IsType(t, App{}, model)
 }
 
+func TestMouseClickAssetsHeaderOpensTicketFolder(t *testing.T) {
+	app := mouseTestApp(t)
+	var opened string
+	app.openPath = func(path string) { opened = path }
+
+	folderRegion := requireRegion(t, app.hitRegions(), hitAssetsFolder)
+	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: folderRegion.X1, Y: folderRegion.Y1, Button: tea.MouseLeft}))
+
+	assert.Nil(t, cmd)
+	assert.Equal(t, folderRegion.Path, opened)
+	assert.Contains(t, opened, "1")
+	assert.IsType(t, App{}, model)
+}
+
 func TestMouseClickCommandBarDraftUsesDraftPath(t *testing.T) {
 	app := mouseTestApp(t)
 	commandRegion := requireCommandRegion(t, app.commandHitRegions(), "draft")
@@ -142,6 +156,47 @@ func TestMouseClickMergeSubmitKeepsExplicitPreviewStep(t *testing.T) {
 	assert.True(t, updated.actions.submitting)
 	assert.False(t, updated.actions.mergePreviewReady)
 	assert.NotNil(t, cmd)
+}
+
+func TestMouseClickMergeSuggestionSelectsTargetWithoutSubmitting(t *testing.T) {
+	app := mouseTestApp(t)
+	app.actions, _ = app.actions.openMerge(1, []triage.MergeSuggestion{
+		{ID: 2, Subject: "First target", Status: "open"},
+		{ID: 3, Subject: "Second target", Status: "pending"},
+	}, 0)
+	optionRegion := requireActionOptionRegion(t, app.actionHitRegions(), 1)
+
+	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: optionRegion.X1, Y: optionRegion.Y1, Button: tea.MouseLeft}))
+	updated := model.(App)
+
+	assert.Nil(t, cmd)
+	assert.Equal(t, actionMerge, updated.actions.mode)
+	assert.Equal(t, 1, updated.actions.mergeSelection)
+	assert.Equal(t, "3", updated.actions.textarea.Value())
+	assert.False(t, updated.actions.submitting)
+}
+
+func TestMouseClickOutsideExplicitModalButtonDoesNotSubmit(t *testing.T) {
+	app := mouseTestApp(t)
+	app.actions, _ = app.actions.openApproval(1, app.perms, "Reply", "pending", "open", 0, 0, "")
+
+	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: app.width / 2, Y: app.height - 2, Button: tea.MouseLeft}))
+	updated := model.(App)
+
+	assert.Nil(t, cmd)
+	assert.Equal(t, actionApproval, updated.actions.mode)
+	assert.False(t, updated.actions.submitting)
+}
+
+func requireActionOptionRegion(t *testing.T, regions []hitRegion, index int) hitRegion {
+	t.Helper()
+	for _, region := range regions {
+		if region.Action == hitActionOption && region.TicketIndex == index {
+			return region
+		}
+	}
+	t.Fatalf("missing action option region %d in %#v", index, regions)
+	return hitRegion{}
 }
 
 func mouseTestApp(t *testing.T) App {

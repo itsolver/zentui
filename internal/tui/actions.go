@@ -84,6 +84,11 @@ type actionsModel struct {
 	ccFocused           bool
 }
 
+type actionButtonSpec struct {
+	Label  string
+	Action hitAction
+}
+
 func newActionsModel(tickets zendesk.TicketService, users zendesk.UserService) actionsModel {
 	ta := textarea.New()
 	ta.Placeholder = "Type your comment..."
@@ -760,6 +765,7 @@ func (m actionsModel) viewField() string {
 		labelStyle.Render("Field:") + " " + valueStyle.Render(m.fieldLabel) + "\n" +
 		labelStyle.Render("Type:") + " " + valueStyle.Render(m.fieldType) + "\n\n" +
 		m.textarea.View() + "\n\n" +
+		m.renderButtonLine(width) + "\n" +
 		dimStyle.Render("ctrl+s update   esc cancel")
 	return borderStyle.Width(width + 4).Render(content + statusLine)
 }
@@ -837,6 +843,7 @@ func (m actionsModel) viewMerge() string {
 		suggestions.String() +
 		labelStyle.Render("Target:") + "\n" + m.textarea.View() + "\n\n" +
 		preview.String() +
+		m.renderButtonLine(width) + "\n" +
 		dimStyle.Render(help) + statusLine
 	return borderStyle.Width(width + 4).Render(content)
 }
@@ -878,7 +885,7 @@ func (m actionsModel) viewApproval() string {
 	}
 
 	help := dimStyle.Render("ctrl+s post   esc cancel   tab public/internal   ↑↓ status")
-	content := title + "\n\n" + statusLine.String() + "\n" + m.textarea.View() + "\n\n" + publicToggle + "\n\n" + help + submitLine
+	content := title + "\n\n" + statusLine.String() + "\n" + m.textarea.View() + "\n\n" + publicToggle + "\n\n" + m.renderButtonLine(width) + "\n" + help + submitLine
 	return borderStyle.Width(width + 4).Render(content)
 }
 
@@ -921,6 +928,7 @@ func (m actionsModel) viewComment() string {
 		m.textarea.View() + "\n\n" +
 		publicToggle + "\n" +
 		ccLine + "\n\n" +
+		m.renderButtonLine(width) + "\n" +
 		help
 	if statusLine != "" {
 		content += "\n" + statusLine
@@ -941,7 +949,63 @@ func (m actionsModel) viewPicker(title string, options []string, selected int) s
 
 	help := dimStyle.Render("↑↓ select   enter confirm   esc cancel")
 
-	return borderStyle.Padding(1, 2).Render(b.String() + "\n\n" + help + statusLine)
+	return borderStyle.Padding(1, 2).Render(b.String() + "\n\n" + m.renderButtonLine(40) + "\n" + help + statusLine)
+}
+
+func (m actionsModel) buttonSpecs() []actionButtonSpec {
+	switch m.mode {
+	case actionComment:
+		specs := []actionButtonSpec{{Label: "Submit", Action: hitActionSubmit}, {Label: "Cancel", Action: hitActionCancel}}
+		if m.perms.CanPublicComment {
+			specs = append(specs, actionButtonSpec{Label: "Public/Internal", Action: hitActionToggle})
+		}
+		return specs
+	case actionApproval:
+		return []actionButtonSpec{
+			{Label: "Post", Action: hitActionSubmit},
+			{Label: "Cancel", Action: hitActionCancel},
+			{Label: "Public/Internal", Action: hitActionToggle},
+			{Label: "Status Up", Action: hitActionUp},
+			{Label: "Status Down", Action: hitActionDown},
+		}
+	case actionMerge:
+		label := "Preview"
+		if m.mergePreviewReady {
+			label = "Confirm Merge"
+		}
+		specs := []actionButtonSpec{{Label: label, Action: hitActionSubmit}, {Label: "Cancel", Action: hitActionCancel}}
+		if m.mergeCleanupPlan.Eligible {
+			specs = append(specs, actionButtonSpec{Label: "Toggle Cleanup", Action: hitActionToggle})
+		}
+		return specs
+	case actionStatus, actionPriority:
+		return []actionButtonSpec{
+			{Label: "Confirm", Action: hitActionSubmit},
+			{Label: "Cancel", Action: hitActionCancel},
+			{Label: "Up", Action: hitActionUp},
+			{Label: "Down", Action: hitActionDown},
+		}
+	case actionField:
+		return []actionButtonSpec{{Label: "Update", Action: hitActionSubmit}, {Label: "Cancel", Action: hitActionCancel}}
+	default:
+		return nil
+	}
+}
+
+func (m actionsModel) renderButtonLine(width int) string {
+	specs := m.buttonSpecs()
+	if len(specs) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(specs))
+	for _, spec := range specs {
+		parts = append(parts, accentStyle.Render("[ "+spec.Label+" ]"))
+	}
+	line := strings.Join(parts, "  ")
+	if width <= 0 {
+		return line
+	}
+	return lipgloss.PlaceHorizontal(width, lipgloss.Center, line)
 }
 
 type pickerBuilder struct {

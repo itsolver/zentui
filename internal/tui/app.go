@@ -482,6 +482,30 @@ func (m App) startMergeForActiveTicket() (App, tea.Cmd) {
 	return m, m.generateMergeSuggestions(ticket)
 }
 
+func (m App) openAssetsFolderForActiveTicket() (App, tea.Cmd) {
+	ticket, ok := m.activeTicket()
+	if ok {
+		if dir := m.ticketWorkDir(ticket.ID); dir != "" && m.openPath != nil {
+			m.openPath(dir)
+		}
+	}
+	return m, nil
+}
+
+func (m App) openFirstEditableField() (App, tea.Cmd) {
+	if m.operator.ticket == nil {
+		return m, nil
+	}
+	for _, row := range m.operator.fieldRows() {
+		if row.Editable {
+			var cmd tea.Cmd
+			m.actions, cmd = m.actions.openField(m.operator.ticket.ID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
+			return m, cmd
+		}
+	}
+	return m, nil
+}
+
 func (m App) ticketWorkDir(ticketID int64) string {
 	dir, err := m.workCache.EnsureTicketDir(ticketID)
 	if err != nil {
@@ -1378,6 +1402,10 @@ func (m *App) handlePaletteAction(action string) (tea.Model, tea.Cmd) {
 		return m.startDraftForActiveTicket()
 	case "merge":
 		return m.startMergeForActiveTicket()
+	case "assets":
+		return m.openAssetsFolderForActiveTicket()
+	case "edit-field":
+		return m.openFirstEditableField()
 	case "status":
 		var id int64
 		var status string
@@ -1581,6 +1609,28 @@ func (m App) handleActionMouseClick(x, y int) (tea.Model, tea.Cmd) {
 		return m.forwardActionKey(tea.KeyUp)
 	case hitActionDown:
 		return m.forwardActionKey(tea.KeyDown)
+	case hitActionOption:
+		return m.handleActionOptionClick(region.TicketIndex)
+	}
+	return m, nil
+}
+
+func (m App) handleActionOptionClick(index int) (tea.Model, tea.Cmd) {
+	switch m.actions.mode {
+	case actionMerge:
+		if index >= 0 && index < len(m.actions.mergeSuggestions) {
+			m.actions.mergeSelection = index
+			m.actions.textarea.SetValue(fmt.Sprint(m.actions.mergeSuggestions[index].ID))
+			m.actions.mergePreviewReady = false
+		}
+	case actionStatus:
+		if index >= 0 && index < len(validStatuses) {
+			m.actions.statusIdx = index
+		}
+	case actionPriority:
+		if index >= 0 && index < len(validPriorities) {
+			m.actions.prioIdx = index
+		}
 	}
 	return m, nil
 }
@@ -1634,13 +1684,7 @@ func (m App) handleMouseCommand(command string) (tea.Model, tea.Cmd) {
 		cmd := m.cmdPalette.open(m.state, m.focus, m.showDetail, m.list.hasMore, hasItems, m.perms)
 		return m, cmd
 	case "assets":
-		ticket, ok := m.activeTicket()
-		if ok {
-			if dir := m.ticketWorkDir(ticket.ID); dir != "" && m.openPath != nil {
-				m.openPath(dir)
-			}
-		}
-		return m, nil
+		return m.openAssetsFolderForActiveTicket()
 	case "pause":
 		m.operator.pauseResumeTimer()
 		return m, nil
@@ -1648,13 +1692,7 @@ func (m App) handleMouseCommand(command string) (tea.Model, tea.Cmd) {
 		m.operator.resetTimer()
 		return m, nil
 	case "edit-field":
-		for _, row := range m.operator.fieldRows() {
-			if row.Editable {
-				var cmd tea.Cmd
-				m.actions, cmd = m.actions.openField(m.operator.ticket.ID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
-				return m, cmd
-			}
-		}
+		return m.openFirstEditableField()
 	}
 	return m, nil
 }
@@ -1779,7 +1817,7 @@ func (m App) commandHitRegions() []hitRegion {
 		{"commands", "commands"},
 	}
 	x := 1
-	y := m.height - 1
+	y := m.height - 2
 	regions := make([]hitRegion, 0, len(commands))
 	for _, item := range commands {
 		w := len(item.label)
@@ -1788,7 +1826,7 @@ func (m App) commandHitRegions() []hitRegion {
 			X1:      x,
 			Y1:      y,
 			X2:      x + w - 1,
-			Y2:      y,
+			Y2:      y + 1,
 			Command: item.command,
 		})
 		x += w + 2
@@ -1800,15 +1838,113 @@ func (m App) actionHitRegions() []hitRegion {
 	if m.width <= 0 || m.height <= 0 {
 		return nil
 	}
-	midX := m.width / 2
-	midY := m.height / 2
-	return []hitRegion{
-		{Action: hitActionCancel, X1: 0, Y1: 0, X2: 8, Y2: 2},
-		{Action: hitActionUp, X1: midX - 20, Y1: midY - 8, X2: midX + 20, Y2: midY - 5},
-		{Action: hitActionDown, X1: midX - 20, Y1: midY + 5, X2: midX + 20, Y2: midY + 8},
-		{Action: hitActionToggle, X1: midX - 30, Y1: midY + 2, X2: midX + 30, Y2: midY + 3},
-		{Action: hitActionSubmit, X1: midX - 30, Y1: m.height - 5, X2: midX + 30, Y2: m.height - 2},
+	if m.cmdPalette.active {
+		midX := m.width / 2
+		midY := m.height / 2
+		return []hitRegion{
+			{Action: hitActionCancel, X1: midX + 38, Y1: midY - 12, X2: midX + 42, Y2: midY - 10},
+			{Action: hitActionSubmit, X1: midX - 42, Y1: midY - 6, X2: midX + 42, Y2: midY + 15},
+			{Action: hitActionUp, X1: midX - 42, Y1: midY - 6, X2: midX + 42, Y2: midY - 1},
+			{Action: hitActionDown, X1: midX - 42, Y1: midY + 1, X2: midX + 42, Y2: midY + 15},
+		}
 	}
+	specs := m.actions.buttonSpecs()
+	if len(specs) == 0 {
+		return nil
+	}
+	overlay := m.actions.View()
+	overlayHeight := lipgloss.Height(overlay)
+	lineWidth := 0
+	for i, spec := range specs {
+		if i > 0 {
+			lineWidth += 2
+		}
+		lineWidth += len("[ " + spec.Label + " ]")
+	}
+	x := (m.width - lineWidth) / 2
+	y := (m.height-overlayHeight)/2 + overlayHeight - 3
+	if y < 0 {
+		y = 0
+	}
+	regions := make([]hitRegion, 0, len(specs))
+	for _, spec := range specs {
+		label := "[ " + spec.Label + " ]"
+		regions = append(regions, hitRegion{
+			Action: spec.Action,
+			X1:     x,
+			Y1:     y,
+			X2:     x + len(label) - 1,
+			Y2:     y,
+		})
+		x += len(label) + 2
+	}
+	regions = append(regions, m.actionOptionHitRegions()...)
+	return regions
+}
+
+func (m App) actionOptionHitRegions() []hitRegion {
+	if m.actions.mode == actionNone || m.width <= 0 || m.height <= 0 {
+		return nil
+	}
+	overlay := m.actions.View()
+	overlayHeight := lipgloss.Height(overlay)
+	top := (m.height - overlayHeight) / 2
+	if top < 0 {
+		top = 0
+	}
+	x1 := m.width / 2
+	if x1 > 40 {
+		x1 -= 40
+	} else {
+		x1 = 0
+	}
+	x2 := m.width / 2
+	if x2+40 < m.width {
+		x2 += 40
+	} else {
+		x2 = m.width - 1
+	}
+	switch m.actions.mode {
+	case actionMerge:
+		if len(m.actions.mergeSuggestions) == 0 {
+			return nil
+		}
+		startY := top + 6
+		regions := make([]hitRegion, 0, len(m.actions.mergeSuggestions))
+		for i := range m.actions.mergeSuggestions {
+			regions = append(regions, hitRegion{
+				Action:      hitActionOption,
+				X1:          x1,
+				Y1:          startY + i,
+				X2:          x2,
+				Y2:          startY + i,
+				TicketIndex: i,
+			})
+		}
+		return regions
+	case actionStatus:
+		return pickerOptionHitRegions(top, x1, x2, validStatuses)
+	case actionPriority:
+		return pickerOptionHitRegions(top, x1, x2, validPriorities)
+	default:
+		return nil
+	}
+}
+
+func pickerOptionHitRegions(top, x1, x2 int, options []string) []hitRegion {
+	regions := make([]hitRegion, 0, len(options))
+	startY := top + 4
+	for i := range options {
+		regions = append(regions, hitRegion{
+			Action:      hitActionOption,
+			X1:          x1,
+			Y1:          startY + i,
+			X2:          x2,
+			Y2:          startY + i,
+			TicketIndex: i,
+		})
+	}
+	return regions
 }
 
 func (m App) View() tea.View {
