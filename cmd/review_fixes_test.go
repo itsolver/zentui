@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/itsolver/zentui/internal/auth"
 	"github.com/itsolver/zentui/internal/demo"
 )
 
@@ -101,6 +102,29 @@ func TestZendeskAttachmentHostsIncludesContentDomains(t *testing.T) {
 	assert.Contains(t, hosts, "example.zendesk.com")
 	assert.Contains(t, hosts, ".zdusercontent.com")
 	assert.Contains(t, hosts, ".zendeskusercontent.com")
+}
+
+func TestZendeskPromptPackEnvForTokenCredentials(t *testing.T) {
+	env := zendeskPromptPackEnv("itsolver", &auth.ProfileCredentials{
+		Method:   "token",
+		Email:    "angus@example.test",
+		APIToken: "secret",
+	})
+
+	assert.Equal(t, []string{
+		"ZENDESK_SUBDOMAIN=itsolver",
+		"ZENDESK_EMAIL=angus@example.test",
+		"ZENDESK_API_TOKEN=secret",
+	}, env)
+}
+
+func TestZendeskPromptPackEnvSkipsOAuthCredentials(t *testing.T) {
+	env := zendeskPromptPackEnv("itsolver", &auth.ProfileCredentials{
+		Method:     "oauth",
+		OAuthToken: "token",
+	})
+
+	assert.Empty(t, env)
 }
 
 func TestNewArticleServiceHonorsDemoMode(t *testing.T) {
