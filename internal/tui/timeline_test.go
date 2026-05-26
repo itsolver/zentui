@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -123,6 +124,134 @@ func TestRenderTimeline_NonEmpty(t *testing.T) {
 	result := renderTimeline(nodes, users, 60)
 	require.NotEmpty(t, result, "expected non-empty timeline render")
 	assert.GreaterOrEqual(t, len(result), 20, "timeline render too short: %q", result)
+}
+
+func TestRenderConversationUsesMetadataAndInternalStyling(t *testing.T) {
+	now := time.Now()
+	pub := true
+	internal := false
+	ticket := types.Ticket{ID: 42, RequesterID: 10, AssigneeID: 20}
+	users := map[int64]types.User{
+		10: {ID: 10, Name: "Julie Boardman", Role: "end-user"},
+		20: {ID: 20, Name: "Angus McLauchlan", Role: "agent"},
+	}
+	comments := []types.Comment{
+		{
+			ID:        1,
+			Body:      "No email from Synergy?",
+			Public:    &pub,
+			AuthorID:  10,
+			CreatedAt: now.Add(-2 * time.Hour),
+			Metadata: &types.CommentMetadata{Via: &types.CommentVia{
+				Channel: "email",
+				Source: types.CommentViaSource{
+					To: types.CommentViaParties{{Name: "IT Solver", Address: "support@example.com"}},
+				},
+			}},
+		},
+		{
+			ID:        2,
+			Body:      "Private context",
+			Public:    &internal,
+			AuthorID:  20,
+			CreatedAt: now.Add(-time.Hour),
+		},
+	}
+
+	result := stripANSI(renderConversation(comments, ticket, users, 80))
+
+	assert.Contains(t, result, "Julie Boardman")
+	assert.Contains(t, result, "via email")
+	assert.Contains(t, result, "To: IT Solver <support@example.com>")
+	assert.Contains(t, result, "No email from Synergy?")
+	assert.Contains(t, result, "Angus McLauchlan")
+	assert.Contains(t, result, "internal note")
+	assert.Contains(t, result, "Private context")
+}
+
+func TestRenderConversationInfersAgentRecipient(t *testing.T) {
+	pub := true
+	ticket := types.Ticket{ID: 42, RequesterID: 10, AssigneeID: 20}
+	users := map[int64]types.User{
+		10: {ID: 10, Name: "Julie Boardman", Role: "end-user"},
+		20: {ID: 20, Name: "Angus McLauchlan", Role: "agent"},
+	}
+	comments := []types.Comment{{
+		ID:       1,
+		Body:     "Initiated Change of Registrant",
+		Public:   &pub,
+		AuthorID: 20,
+	}}
+
+	result := stripANSI(renderConversation(comments, ticket, users, 80))
+
+	assert.Contains(t, result, "To: Julie Boardman")
+}
+
+func TestDetailHeaderUsesZendeskStyleFields(t *testing.T) {
+	m := detailModel{
+		ticket: &types.Ticket{
+			ID:             42,
+			Subject:        "Invalid Registrant - Notice of Suspension",
+			Status:         "pending",
+			Type:           "question",
+			RequesterID:    10,
+			OrganizationID: 99,
+		},
+		users: map[int64]types.User{
+			10: {ID: 10, Name: "Julie Boardman"},
+		},
+		organizations: map[int64]types.Organization{
+			99: {ID: 99, Name: "Acorn Agencies"},
+		},
+		width: 120,
+	}
+
+	header := stripANSI(m.renderHeaderLine(false))
+
+	assert.Contains(t, header, "Acorn Agencies")
+	assert.Contains(t, header, "Julie Boardman")
+	assert.Contains(t, header, "pending")
+	assert.Contains(t, header, "question")
+	assert.Contains(t, header, "#42")
+	assert.Contains(t, header, "Invalid Registrant")
+	assert.Contains(t, header, "[Events]")
+}
+
+func TestDetailRenderDefaultsToConversationAndTogglesEvents(t *testing.T) {
+	pub := true
+	m := detailModel{
+		ticket: &types.Ticket{ID: 42, RequesterID: 10, AssigneeID: 20},
+		users: map[int64]types.User{
+			10: {ID: 10, Name: "Julie Boardman", Role: "end-user"},
+			20: {ID: 20, Name: "Angus McLauchlan", Role: "agent"},
+		},
+		comments:       []types.Comment{{ID: 1, Body: "Conversation body", Public: &pub, AuthorID: 10}},
+		commentsLoaded: true,
+		timeline: []TimelineNode{{
+			Audit:   types.Audit{ID: 1, AuthorID: 20, CreatedAt: time.Now()},
+			Changes: []types.AuditEvent{{Type: "Change", FieldName: "status", PreviousValue: "new", Value: "open"}},
+		}},
+		width: 100,
+	}
+
+	conversation := stripANSI(m.renderContent())
+	assert.Contains(t, conversation, "Conversation body")
+	assert.NotContains(t, conversation, "Status:")
+
+	m.toggleEvents()
+	events := stripANSI(m.renderContent())
+	assert.Contains(t, events, "Status:")
+	assert.NotContains(t, events, "Conversation body")
+	assert.Equal(t, "[Conversation]", m.toggleLabel())
+}
+
+func TestDetailFilterKeyTogglesEvents(t *testing.T) {
+	m := detailModel{}
+
+	updated, _ := m.Update(tea.KeyPressMsg{Code: 'f'})
+
+	assert.True(t, updated.showEvents)
 }
 
 func TestWrapText(t *testing.T) {
