@@ -425,13 +425,21 @@ func (m listModel) visibleRowCount() int {
 }
 
 func (m listModel) setCursor(index int) (listModel, tea.Cmd) {
+	return m.setCursorWithChanged(index, true)
+}
+
+func (m listModel) setCursorWithoutCursorChanged(index int) (listModel, tea.Cmd) {
+	return m.setCursorWithChanged(index, false)
+}
+
+func (m listModel) setCursorWithChanged(index int, emitChanged bool) (listModel, tea.Cmd) {
 	if index < 0 || index >= len(m.items) || m.loading {
 		return m, nil
 	}
 	changed := m.cursor != index
 	m.cursor = index
 	var cmds []tea.Cmd
-	if changed {
+	if changed && emitChanged {
 		cmds = append(cmds, m.emitCursorChanged())
 	}
 	if m.cursor == len(m.items)-1 && m.hasMore && !m.loadingMore {

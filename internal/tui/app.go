@@ -109,6 +109,8 @@ type App struct {
 	promptEnv   []string
 	openPath    func(string)
 	notice      string
+
+	mouseClickPending bool
 }
 
 type AppOptions struct {
@@ -508,7 +510,7 @@ func (m App) openAssetsFolderForActiveTicket() (App, tea.Cmd) {
 
 func (m App) openFirstEditableField() (App, tea.Cmd) {
 	ticket, ok := m.activeTicket()
-	if !ok || m.operator.ticket == nil || m.operator.ticket.ID != ticket.ID {
+	if !m.operatorPaneVisible() || !ok || m.operator.ticket == nil || m.operator.ticket.ID != ticket.ID {
 		return m, nil
 	}
 	for _, row := range m.operator.fieldRows() {
@@ -517,6 +519,10 @@ func (m App) openFirstEditableField() (App, tea.Cmd) {
 		}
 	}
 	return m, nil
+}
+
+func (m App) operatorPaneVisible() bool {
+	return m.state == splitView && m.showDetail && m.operatorPanelWidth() > 0
 }
 
 func (m App) ticketWorkDir(ticketID int64) string {
@@ -686,12 +692,18 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.MouseClickMsg:
 		mouse := msg.Mouse()
 		if mouse.Button == tea.MouseLeft {
+			m.mouseClickPending = true
 			return m.handleMouseClick(mouse.X, mouse.Y)
 		}
 
 	case tea.MouseReleaseMsg:
 		mouse := msg.Mouse()
 		if mouse.Button == tea.MouseLeft {
+			if m.mouseClickPending {
+				m.mouseClickPending = false
+				return m, nil
+			}
+			m.mouseClickPending = false
 			return m.handleMouseClick(mouse.X, mouse.Y)
 		}
 
@@ -1560,6 +1572,9 @@ func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	if m.cmdPalette.active {
 		return m.handlePaletteMouseClick(x, y)
 	}
+	if m.searchM.active || m.gotoM.active {
+		return m, nil
+	}
 	region, ok := findHitRegion(m.hitRegions(), x, y)
 	if !ok {
 		return m, nil
@@ -1583,7 +1598,7 @@ func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	case hitQueueRow:
 		return m.selectQueueIndex(region.TicketIndex)
 	case hitFieldEdit:
-		if !m.operatorMatchesActiveTicket() {
+		if !m.operatorPaneVisible() || !m.operatorMatchesActiveTicket() {
 			return m, nil
 		}
 		row, ok := m.operator.fieldRowByID(region.FieldID)
@@ -1625,6 +1640,9 @@ func (m App) handleMouseWheel(x, y int, button tea.MouseButton) (tea.Model, tea.
 		if button == tea.MouseWheelDown {
 			return m.forwardPaletteKey(tea.KeyDown)
 		}
+		return m, nil
+	}
+	if m.searchM.active || m.gotoM.active {
 		return m, nil
 	}
 	region, ok := findHitRegion(m.paneHitRegions(), x, y)
@@ -1774,7 +1792,7 @@ func (m App) operatorMatchesActiveTicket() bool {
 }
 
 func (m App) openInlineFieldEdit(row operatorFieldRow) (App, tea.Cmd) {
-	if m.operator.ticket == nil {
+	if !m.operatorPaneVisible() || m.operator.ticket == nil {
 		return m, nil
 	}
 	m.focus = focusOperator
@@ -1842,7 +1860,7 @@ func (m App) selectQueueIndex(index int) (tea.Model, tea.Cmd) {
 	detailAlreadyLoaded := m.detail.ticket != nil && m.detail.ticket.ID == ticketID
 	m.focus = focusList
 	var cursorCmd tea.Cmd
-	m.list, cursorCmd = m.list.setCursor(index)
+	m.list, cursorCmd = m.list.setCursorWithoutCursorChanged(index)
 	delete(m.list.newTicketIDs, ticketID)
 	if wasSelected && detailAlreadyLoaded && (m.state == splitView || m.state == detailView) {
 		return m, cursorCmd
@@ -1909,7 +1927,7 @@ func (m App) hitRegions() []hitRegion {
 	regions := m.paneHitRegions()
 	contentX := 2
 	contentY := 2
-	if m.state == splitView || m.state == listView {
+	if (m.state == splitView || m.state == listView) && !m.list.loading {
 		listWidth := m.listPanelWidth()
 		start, end := m.list.visibleWindow()
 		rowY := contentY + 2
@@ -2029,14 +2047,14 @@ func (m App) commandPaletteHitRegions() []hitRegion {
 		{Action: hitActionCancel, X1: left + overlayWidth - 8, Y1: top, X2: left + overlayWidth - 2, Y2: top + 2},
 	}
 
-	listTop := top + 5
+	listTop := top + cmdPaletteBorderSize + cmdPalettePaddingY + cmdPaletteListContentOffset
 	for _, row := range m.cmdPalette.visibleCommandRows() {
 		y := listTop + row.line
 		regions = append(regions, hitRegion{
 			Action:      hitActionOption,
-			X1:          left + 2,
+			X1:          left + cmdPaletteBorderSize + cmdPalettePaddingX,
 			Y1:          y,
-			X2:          left + overlayWidth - 3,
+			X2:          left + overlayWidth - cmdPaletteBorderSize - cmdPalettePaddingX - 1,
 			Y2:          y,
 			TicketIndex: row.index,
 		})
@@ -2050,28 +2068,23 @@ func (m App) actionOptionHitRegions() []hitRegion {
 	}
 	overlay := m.actions.View()
 	overlayHeight := lipgloss.Height(overlay)
+	overlayWidth := lipgloss.Width(overlay)
+	left := (m.width - overlayWidth) / 2
 	top := (m.height - overlayHeight) / 2
+	if left < 0 {
+		left = 0
+	}
 	if top < 0 {
 		top = 0
 	}
-	x1 := m.width / 2
-	if x1 > 40 {
-		x1 -= 40
-	} else {
-		x1 = 0
-	}
-	x2 := m.width / 2
-	if x2+40 < m.width {
-		x2 += 40
-	} else {
-		x2 = m.width - 1
-	}
+	x1 := left + 1
+	x2 := left + overlayWidth - 2
 	switch m.actions.mode {
 	case actionMerge:
 		if len(m.actions.mergeSuggestions) == 0 {
 			return nil
 		}
-		startY := top + 6
+		startY := top + 5
 		regions := make([]hitRegion, 0, len(m.actions.mergeSuggestions))
 		for i := range m.actions.mergeSuggestions {
 			regions = append(regions, hitRegion{

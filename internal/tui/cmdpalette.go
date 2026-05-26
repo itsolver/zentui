@@ -11,6 +11,13 @@ import (
 	"github.com/sahilm/fuzzy"
 )
 
+const (
+	cmdPaletteBorderSize        = 1
+	cmdPalettePaddingX          = 3
+	cmdPalettePaddingY          = 1
+	cmdPaletteListContentOffset = 3
+)
+
 type cmdPaletteActionMsg struct {
 	action string
 }
@@ -389,5 +396,5 @@ func (m cmdPaletteModel) View() string {
 
 	content := titleBar + inputView + "\n\n" + listContent
 
-	return borderStyle.Width(w).Padding(1, 3).Render(content)
+	return borderStyle.Width(w).Padding(cmdPalettePaddingY, cmdPalettePaddingX).Render(content)
 }
