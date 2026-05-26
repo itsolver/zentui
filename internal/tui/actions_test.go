@@ -25,6 +25,14 @@ func TestSubmitMergeRunsRequesterCleanupAfterTicketMerge(t *testing.T) {
 	_, ok := msg.(ticketUpdatedMsg)
 	require.True(t, ok, "expected ticketUpdatedMsg, got %T", msg)
 	assert.Equal(t, []string{"ticket_merge", "user_merge", "identity_create"}, calls)
+	require.NotNil(t, tickets.mergeReq)
+	require.NotNil(t, tickets.mergeReq.SourceCommentIsPublic)
+	require.NotNil(t, tickets.mergeReq.TargetCommentIsPublic)
+	assert.False(t, *tickets.mergeReq.SourceCommentIsPublic)
+	assert.True(t, *tickets.mergeReq.TargetCommentIsPublic)
+	assert.Contains(t, tickets.mergeReq.TargetComment, "merged request #1")
+	assert.Contains(t, tickets.mergeReq.TargetComment, "existing request #2")
+	assert.Contains(t, tickets.mergeReq.TargetComment, "Please reply here")
 }
 
 func TestSubmitMergeReturnsTicketUpdateWhenRequesterCleanupFails(t *testing.T) {
@@ -47,7 +55,8 @@ func TestSubmitMergeReturnsTicketUpdateWhenRequesterCleanupFails(t *testing.T) {
 }
 
 type mergeOrderTicketService struct {
-	calls *[]string
+	calls    *[]string
+	mergeReq *types.MergeTicketsRequest
 }
 
 func (s *mergeOrderTicketService) List(context.Context, *types.ListTicketsOptions) (*types.TicketPage, error) {
@@ -107,8 +116,11 @@ func (s *mergeOrderTicketService) ListTicketFields(context.Context, *types.ListT
 	return nil, nil
 }
 
-func (s *mergeOrderTicketService) MergeTickets(context.Context, int64, *types.MergeTicketsRequest) (*types.MergeTicketsResult, error) {
-	*s.calls = append(*s.calls, "ticket_merge")
+func (s *mergeOrderTicketService) MergeTickets(_ context.Context, _ int64, req *types.MergeTicketsRequest) (*types.MergeTicketsResult, error) {
+	if s.calls != nil {
+		*s.calls = append(*s.calls, "ticket_merge")
+	}
+	s.mergeReq = req
 	return &types.MergeTicketsResult{Ticket: &types.Ticket{ID: 2, Status: "open"}}, nil
 }
 
