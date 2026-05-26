@@ -42,6 +42,7 @@ type panelFocus int
 const (
 	focusList panelFocus = iota
 	focusDetail
+	focusOperator
 )
 
 type currentUserMsg struct{ user *types.User }
@@ -98,6 +99,7 @@ type App struct {
 	showDetail  bool
 	version     string
 	cursorSeq   uint64
+	openPath    func(string)
 }
 
 type AppOptions struct {
@@ -144,6 +146,7 @@ func NewAppWithOptions(tickets zendesk.TicketService, search zendesk.SearchServi
 		codex:      codex,
 		workCache:  triage.WorkCache{Root: opts.WorkDir, HTTPClient: opts.HTTPClient, UntrustedHTTPClient: opts.UntrustedHTTPClient, TrustedHosts: opts.TrustedHosts},
 		pythonBin:  opts.PythonBin,
+		openPath:   browser.Open,
 	}
 }
 
@@ -479,6 +482,22 @@ func (m App) startMergeForActiveTicket() (App, tea.Cmd) {
 	return m, m.generateMergeSuggestions(ticket)
 }
 
+func (m App) ticketWorkDir(ticketID int64) string {
+	dir, err := m.workCache.EnsureTicketDir(ticketID)
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+func (m App) viewWithMouse(content string) tea.View {
+	v := tea.NewView(content)
+	v.AltScreen = true
+	v.WindowTitle = m.windowTitle()
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
+}
+
 func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -622,6 +641,16 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Batch(m.list.spinner.Tick, m.list.loadTickets())
 			}
 		}
+
+	case tea.MouseClickMsg:
+		mouse := msg.Mouse()
+		if mouse.Button == tea.MouseLeft {
+			return m.handleMouseClick(mouse.X, mouse.Y)
+		}
+
+	case tea.MouseWheelMsg:
+		mouse := msg.Mouse()
+		return m.handleMouseWheel(mouse.X, mouse.Y, mouse.Button)
 	}
 
 	// Route to active action overlay first
@@ -672,7 +701,9 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Handle cross-cutting messages
 	switch msg := msg.(type) {
 	case imageOpenMsg:
-		browser.Open(msg.url)
+		if m.openPath != nil {
+			m.openPath(msg.url)
+		}
 		return m, nil
 
 	case currentUserMsg:
@@ -981,7 +1012,9 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.actions = m.actions.openPriority(t.ID, t.Priority)
 					return m, nil
 				case key.Matches(msg, keys.Open):
-					browser.Open(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, t.ID))
+					if m.openPath != nil {
+						m.openPath(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, t.ID))
+					}
 					return m, nil
 				case key.Matches(msg, keys.Enter):
 					return m, func() tea.Msg {
@@ -1099,7 +1132,9 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case key.Matches(msg, keys.Open):
 				if len(m.list.items) > 0 {
 					t := m.list.items[m.list.cursor]
-					browser.Open(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, t.ID))
+					if m.openPath != nil {
+						m.openPath(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, t.ID))
+					}
 					return m, nil
 				}
 			}
@@ -1132,7 +1167,9 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.actions = m.actions.openPriority(m.detail.ticket.ID, m.detail.ticket.Priority)
 					return m, nil
 				case key.Matches(msg, keys.Open):
-					browser.Open(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, m.detail.ticket.ID))
+					if m.openPath != nil {
+						m.openPath(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, m.detail.ticket.ID))
+					}
 					return m, nil
 				}
 			}
@@ -1160,7 +1197,9 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.actions = m.actions.openPriority(t.ID, t.Priority)
 					return m, nil
 				case key.Matches(msg, keys.Open):
-					browser.Open(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, t.ID))
+					if m.openPath != nil {
+						m.openPath(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, t.ID))
+					}
 					return m, nil
 				}
 			}
@@ -1314,7 +1353,9 @@ func (m *App) handlePaletteAction(action string) (tea.Model, tea.Cmd) {
 			id = m.list.items[m.list.cursor].ID
 		}
 		if id > 0 {
-			browser.Open(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, id))
+			if m.openPath != nil {
+				m.openPath(fmt.Sprintf("https://%s.zendesk.com/agent/tickets/%d", m.subdomain, id))
+			}
 		}
 		return m, nil
 	case "comment":
@@ -1428,25 +1469,361 @@ func (m *App) handlePaletteAction(action string) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
+	if m.actions.mode != actionNone {
+		return m.handleActionMouseClick(x, y)
+	}
+	if m.cmdPalette.active {
+		return m.handlePaletteMouseClick(x, y)
+	}
+	region, ok := findHitRegion(m.hitRegions(), x, y)
+	if !ok {
+		return m, nil
+	}
+	if region.Disabled {
+		if region.Reason != "" {
+			m.mergeErr = fmt.Errorf("%s", region.Reason)
+		}
+		return m, nil
+	}
+	switch region.Action {
+	case hitPaneList:
+		m.focus = focusList
+		return m, nil
+	case hitPaneDetail:
+		m.focus = focusDetail
+		return m, nil
+	case hitPaneOperator:
+		m.focus = focusOperator
+		return m, nil
+	case hitQueueRow:
+		return m.selectQueueIndex(region.TicketIndex)
+	case hitFieldEdit:
+		row, ok := m.operator.fieldRowByID(region.FieldID)
+		if !ok || !row.Editable {
+			return m, nil
+		}
+		var cmd tea.Cmd
+		m.actions, cmd = m.actions.openField(region.TicketID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
+		return m, cmd
+	case hitAssetsFolder, hitAssetFile:
+		if region.Path != "" && m.openPath != nil {
+			m.openPath(region.Path)
+		}
+		return m, nil
+	case hitCommand:
+		return m.handleMouseCommand(region.Command)
+	}
+	return m, nil
+}
+
+func (m App) handleMouseWheel(x, y int, button tea.MouseButton) (tea.Model, tea.Cmd) {
+	if m.actions.mode != actionNone {
+		if button == tea.MouseWheelUp {
+			return m.forwardActionKey(tea.KeyUp)
+		}
+		if button == tea.MouseWheelDown {
+			return m.forwardActionKey(tea.KeyDown)
+		}
+		return m, nil
+	}
+	if m.cmdPalette.active {
+		if button == tea.MouseWheelUp {
+			return m.forwardPaletteKey(tea.KeyUp)
+		}
+		if button == tea.MouseWheelDown {
+			return m.forwardPaletteKey(tea.KeyDown)
+		}
+		return m, nil
+	}
+	region, ok := findHitRegion(m.paneHitRegions(), x, y)
+	if !ok {
+		return m, nil
+	}
+	switch region.Action {
+	case hitPaneList:
+		if button == tea.MouseWheelUp {
+			return m.forwardListKey(tea.KeyUp)
+		}
+		if button == tea.MouseWheelDown {
+			return m.forwardListKey(tea.KeyDown)
+		}
+	case hitPaneDetail:
+		if button == tea.MouseWheelUp {
+			return m.forwardDetailKey(tea.KeyUp)
+		}
+		if button == tea.MouseWheelDown {
+			return m.forwardDetailKey(tea.KeyDown)
+		}
+	}
+	return m, nil
+}
+
+func (m App) handleActionMouseClick(x, y int) (tea.Model, tea.Cmd) {
+	region, ok := findHitRegion(m.actionHitRegions(), x, y)
+	if !ok {
+		return m, nil
+	}
+	switch region.Action {
+	case hitActionCancel:
+		return m.forwardActionKey(tea.KeyEscape)
+	case hitActionToggle:
+		return m.forwardActionKey(tea.KeyTab)
+	case hitActionSubmit:
+		if m.actions.mode == actionApproval || m.actions.mode == actionMerge {
+			return m.forwardActionSubmit()
+		}
+		if m.actions.mode == actionField || m.actions.mode == actionComment {
+			return m.forwardActionSubmit()
+		}
+		return m.forwardActionKey(tea.KeyEnter)
+	case hitActionUp:
+		return m.forwardActionKey(tea.KeyUp)
+	case hitActionDown:
+		return m.forwardActionKey(tea.KeyDown)
+	}
+	return m, nil
+}
+
+func (m App) handlePaletteMouseClick(x, y int) (tea.Model, tea.Cmd) {
+	region, ok := findHitRegion(m.actionHitRegions(), x, y)
+	if !ok {
+		return m, nil
+	}
+	switch region.Action {
+	case hitActionCancel:
+		return m.forwardPaletteKey(tea.KeyEscape)
+	case hitActionSubmit:
+		return m.forwardPaletteKey(tea.KeyEnter)
+	case hitActionUp:
+		return m.forwardPaletteKey(tea.KeyUp)
+	case hitActionDown:
+		return m.forwardPaletteKey(tea.KeyDown)
+	}
+	return m, nil
+}
+
+func (m App) forwardActionKey(code rune) (tea.Model, tea.Cmd) {
+	return m.Update(tea.KeyPressMsg{Code: code})
+}
+
+func (m App) forwardActionSubmit() (tea.Model, tea.Cmd) {
+	return m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+}
+
+func (m App) forwardPaletteKey(code rune) (tea.Model, tea.Cmd) {
+	return m.Update(tea.KeyPressMsg{Code: code})
+}
+
+func (m App) forwardListKey(code rune) (tea.Model, tea.Cmd) {
+	m.focus = focusList
+	return m.Update(tea.KeyPressMsg{Code: code})
+}
+
+func (m App) forwardDetailKey(code rune) (tea.Model, tea.Cmd) {
+	m.focus = focusDetail
+	return m.Update(tea.KeyPressMsg{Code: code})
+}
+
+func (m App) handleMouseCommand(command string) (tea.Model, tea.Cmd) {
+	switch command {
+	case "open", "draft", "merge", "refresh", "load-more":
+		return m.handlePaletteAction(command)
+	case "commands":
+		hasItems := len(m.list.items) > 0
+		cmd := m.cmdPalette.open(m.state, m.focus, m.showDetail, m.list.hasMore, hasItems, m.perms)
+		return m, cmd
+	case "assets":
+		ticket, ok := m.activeTicket()
+		if ok {
+			if dir := m.ticketWorkDir(ticket.ID); dir != "" && m.openPath != nil {
+				m.openPath(dir)
+			}
+		}
+		return m, nil
+	case "pause":
+		m.operator.pauseResumeTimer()
+		return m, nil
+	case "reset":
+		m.operator.resetTimer()
+		return m, nil
+	case "edit-field":
+		for _, row := range m.operator.fieldRows() {
+			if row.Editable {
+				var cmd tea.Cmd
+				m.actions, cmd = m.actions.openField(m.operator.ticket.ID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
+				return m, cmd
+			}
+		}
+	}
+	return m, nil
+}
+
+func (m App) selectQueueIndex(index int) (tea.Model, tea.Cmd) {
+	if index < 0 || index >= len(m.list.items) {
+		return m, nil
+	}
+	m.focus = focusList
+	m.list.cursor = index
+	ticketID := m.list.items[index].ID
+	delete(m.list.newTicketIDs, ticketID)
+	m.operator.focusTicketID(ticketID)
+	if m.state == listView {
+		if m.width >= 120 {
+			m.state = splitView
+			m.showDetail = true
+		} else {
+			m.state = detailView
+		}
+	}
+	if m.state == splitView && m.showDetail {
+		m.detail = newDetailModel(m.tickets)
+		m.detail.expectedID = ticketID
+		m.detail.width = m.detailPanelWidth()
+		m.detail.height = m.height
+		return m, tea.Batch(m.detail.spinner.Tick, m.detail.loadTicket(ticketID), m.detail.loadAudits(ticketID))
+	}
+	if m.state == detailView {
+		m.detail = newDetailModel(m.tickets)
+		m.detail.expectedID = ticketID
+		m.detail.width = m.width
+		m.detail.height = m.height
+		return m, tea.Batch(m.detail.spinner.Tick, m.detail.loadTicket(ticketID), m.detail.loadAudits(ticketID))
+	}
+	return m, nil
+}
+
+func (m App) paneHitRegions() []hitRegion {
+	if m.width <= 0 || m.height <= 0 {
+		return nil
+	}
+	contentX := 2
+	contentY := 2
+	contentHeight := m.height - 3
+	if contentHeight < contentY {
+		contentHeight = m.height - 1
+	}
+	switch m.state {
+	case splitView:
+		listWidth := m.listPanelWidth()
+		detailWidth := m.detailPanelWidth()
+		operatorWidth := m.operatorPanelWidth()
+		regions := []hitRegion{
+			{Action: hitPaneList, X1: contentX, Y1: contentY, X2: contentX + listWidth - 1, Y2: contentHeight},
+			{Action: hitPaneDetail, X1: contentX + listWidth + 1, Y1: contentY, X2: contentX + listWidth + detailWidth, Y2: contentHeight},
+		}
+		if operatorWidth > 0 {
+			startX := contentX + listWidth + detailWidth + 2
+			regions = append(regions, hitRegion{Action: hitPaneOperator, X1: startX, Y1: contentY, X2: startX + operatorWidth - 1, Y2: contentHeight})
+		}
+		return regions
+	case listView:
+		return []hitRegion{{Action: hitPaneList, X1: contentX, Y1: contentY, X2: m.width - 1, Y2: contentHeight}}
+	case detailView:
+		return []hitRegion{{Action: hitPaneDetail, X1: contentX, Y1: contentY, X2: m.width - 1, Y2: contentHeight}}
+	}
+	return nil
+}
+
+func (m App) hitRegions() []hitRegion {
+	regions := m.paneHitRegions()
+	contentX := 2
+	contentY := 2
+	if m.state == splitView || m.state == listView {
+		listWidth := m.listPanelWidth()
+		start, end := m.list.visibleWindow()
+		rowY := contentY + 2
+		for i := start; i < end; i++ {
+			regions = append(regions, hitRegion{
+				Action:      hitQueueRow,
+				X1:          contentX,
+				Y1:          rowY + (i - start),
+				X2:          contentX + listWidth - 1,
+				Y2:          rowY + (i - start),
+				TicketIndex: i,
+				TicketID:    m.list.items[i].ID,
+			})
+		}
+	}
+	if m.state == splitView && m.showDetail && m.operatorPanelWidth() > 0 {
+		listWidth := m.listPanelWidth()
+		detailWidth := m.detailPanelWidth()
+		operatorX := contentX + listWidth + detailWidth + 2
+		assetsFolder := ""
+		if m.operator.ticket != nil {
+			assetsFolder = m.ticketWorkDir(m.operator.ticket.ID)
+		}
+		regions = append(regions, m.operator.hitRegions(operatorX, contentY, m.operatorPanelWidth(), assetsFolder)...)
+	}
+	regions = append(regions, m.commandHitRegions()...)
+	return regions
+}
+
+func (m App) commandHitRegions() []hitRegion {
+	if m.height <= 0 || m.width <= 0 {
+		return nil
+	}
+	commands := []struct {
+		label   string
+		command string
+	}{
+		{"open", "open"},
+		{"field", "edit-field"},
+		{"assets", "assets"},
+		{"draft", "draft"},
+		{"merge", "merge"},
+		{"refresh", "refresh"},
+		{"more", "load-more"},
+		{"pause", "pause"},
+		{"reset", "reset"},
+		{"commands", "commands"},
+	}
+	x := 1
+	y := m.height - 1
+	regions := make([]hitRegion, 0, len(commands))
+	for _, item := range commands {
+		w := len(item.label)
+		regions = append(regions, hitRegion{
+			Action:  hitCommand,
+			X1:      x,
+			Y1:      y,
+			X2:      x + w - 1,
+			Y2:      y,
+			Command: item.command,
+		})
+		x += w + 2
+	}
+	return regions
+}
+
+func (m App) actionHitRegions() []hitRegion {
+	if m.width <= 0 || m.height <= 0 {
+		return nil
+	}
+	midX := m.width / 2
+	midY := m.height / 2
+	return []hitRegion{
+		{Action: hitActionCancel, X1: 0, Y1: 0, X2: 8, Y2: 2},
+		{Action: hitActionUp, X1: midX - 20, Y1: midY - 8, X2: midX + 20, Y2: midY - 5},
+		{Action: hitActionDown, X1: midX - 20, Y1: midY + 5, X2: midX + 20, Y2: midY + 8},
+		{Action: hitActionToggle, X1: midX - 30, Y1: midY + 2, X2: midX + 30, Y2: midY + 3},
+		{Action: hitActionSubmit, X1: midX - 30, Y1: m.height - 5, X2: midX + 30, Y2: m.height - 2},
+	}
+}
+
 func (m App) View() tea.View {
 	// Overlay: action modal
 	if m.actions.mode != actionNone {
 		overlay := m.actions.View()
 		content := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
-		v := tea.NewView(content)
-		v.AltScreen = true
-		v.WindowTitle = m.windowTitle()
-		return v
+		return m.viewWithMouse(content)
 	}
 
 	// Overlay: command palette
 	if m.cmdPalette.active {
 		overlay := m.cmdPalette.View()
 		content := lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, overlay)
-		v := tea.NewView(content)
-		v.AltScreen = true
-		v.WindowTitle = m.windowTitle()
-		return v
+		return m.viewWithMouse(content)
 	}
 
 	var content string
@@ -1499,10 +1876,7 @@ func (m App) View() tea.View {
 		Padding(2, 2).
 		Render(content)
 
-	v := tea.NewView(styledContent + "\n" + help)
-	v.AltScreen = true
-	v.WindowTitle = m.windowTitle()
-	return v
+	return m.viewWithMouse(styledContent + "\n" + help)
 }
 
 func (m App) renderSplitView() string {
@@ -1521,8 +1895,10 @@ func (m App) renderSplitView() string {
 
 	if m.focus == focusList {
 		listPanel = focusBorderStyle.Width(listWidth).Render(listContent)
-	} else {
+	} else if m.focus == focusDetail {
 		detailPanel = focusBorderStyle.Width(detailWidth).Render(detailContent)
+	} else if m.focus == focusOperator && operatorWidth > 0 {
+		operatorPanel = focusBorderStyle.Width(operatorWidth).Render(operatorContent)
 	}
 
 	divider := m.renderDivider()
@@ -1574,6 +1950,12 @@ func (m App) helpBar() string {
 		left = "Ranking merge targets with codex exec...  " + left
 	} else if m.mergeErr != nil {
 		left = errorStyle.Render("Merge error: "+m.mergeErr.Error()) + "  " + left
+	}
+	mouseActions := "open  field  assets  draft  merge  refresh  more  pause  reset  commands"
+	if left != "" {
+		left = mouseActions + "  |  " + left
+	} else {
+		left = mouseActions
 	}
 
 	if m.currentUser == nil || m.width == 0 {

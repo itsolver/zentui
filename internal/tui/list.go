@@ -397,6 +397,49 @@ func (m listModel) emitCursorChanged() tea.Cmd {
 	return nil
 }
 
+func (m listModel) visibleWindow() (int, int) {
+	visibleRows := m.visibleRowCount()
+	start := 0
+	if m.cursor >= visibleRows {
+		start = m.cursor - visibleRows + 1
+	}
+	end := start + visibleRows
+	if end > len(m.items) {
+		end = len(m.items)
+	}
+	return start, end
+}
+
+func (m listModel) visibleRowCount() int {
+	visibleRows := m.height - 8 // header + help bar + padding
+	if m.hasMore || m.loadingMore {
+		visibleRows-- // reserve line for bottom indicator
+	}
+	if m.showChart && len(m.items) > 1 {
+		visibleRows -= chartHeight
+	}
+	if visibleRows < 1 {
+		visibleRows = 10
+	}
+	return visibleRows
+}
+
+func (m listModel) setCursor(index int) (listModel, tea.Cmd) {
+	if index < 0 || index >= len(m.items) || m.loading {
+		return m, nil
+	}
+	if m.cursor == index {
+		return m, nil
+	}
+	m.cursor = index
+	cmds := []tea.Cmd{m.emitCursorChanged()}
+	if m.cursor == len(m.items)-1 && m.hasMore && !m.loadingMore {
+		m.loadingMore = true
+		cmds = append(cmds, m.spinner.Tick, m.triggerLoadMore())
+	}
+	return m, tea.Batch(cmds...)
+}
+
 func (m listModel) View() string {
 	if m.loading {
 		return m.spinner.View() + " Loading tickets..."
@@ -435,27 +478,8 @@ func (m listModel) View() string {
 	}
 	b.WriteString(header + "\n\n")
 
-	// Calculate visible rows
-	visibleRows := m.height - 8 // header + help bar + padding
-	if m.hasMore || m.loadingMore {
-		visibleRows-- // reserve line for bottom indicator
-	}
-	if m.showChart && len(m.items) > 1 {
-		visibleRows -= chartHeight
-	}
-	if visibleRows < 1 {
-		visibleRows = 10
-	}
-
-	// Scrolling window
-	start := 0
-	if m.cursor >= visibleRows {
-		start = m.cursor - visibleRows + 1
-	}
-	end := start + visibleRows
-	if end > len(m.items) {
-		end = len(m.items)
-	}
+	visibleRows := m.visibleRowCount()
+	start, end := m.visibleWindow()
 
 	for i := start; i < end; i++ {
 		t := m.items[i]
