@@ -69,6 +69,13 @@ type mergePreparedMsg struct {
 
 type mergePrepareErrMsg struct{ err error }
 
+type inlineFieldUpdatedMsg struct {
+	ticketID int64
+	ticket   *types.Ticket
+}
+
+type inlineFieldErrMsg struct{ err error }
+
 type App struct {
 	tickets     zendesk.TicketService
 	search      zendesk.SearchService
@@ -500,9 +507,7 @@ func (m App) openFirstEditableField() (App, tea.Cmd) {
 	}
 	for _, row := range m.operator.fieldRows() {
 		if row.Editable {
-			var cmd tea.Cmd
-			m.actions, cmd = m.actions.openField(ticket.ID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
-			return m, cmd
+			return m.openInlineFieldEdit(row)
 		}
 	}
 	return m, nil
@@ -582,6 +587,10 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(cmds...)
 
 	case tea.KeyPressMsg:
+		if m.operator.fieldEditActive() {
+			return m.handleInlineFieldKey(msg)
+		}
+
 		// Global quit — but not when in input mode
 		if m.actions.mode == actionNone && !m.searchM.active && !m.gotoM.active && !m.cmdPalette.active {
 			if key.Matches(msg, keys.Quit) {
@@ -745,6 +754,35 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case ticketFieldsLoadedMsg:
 		m.operator.setTicketFields(msg.fields)
+		return m, nil
+
+	case inlineFieldUpdatedMsg:
+		m.operator.cancelFieldEdit()
+		if msg.ticket != nil {
+			if m.operator.ticket != nil && m.operator.ticket.ID == msg.ticket.ID {
+				m.operator.ticket = msg.ticket
+			}
+			if m.detail.ticket != nil && m.detail.ticket.ID == msg.ticket.ID {
+				m.detail.ticket = msg.ticket
+				if m.detail.ready {
+					m.detail.viewport.SetContent(m.detail.renderContent())
+				}
+			}
+		}
+		m.list.loading = true
+		cmds := []tea.Cmd{m.list.spinner.Tick, m.list.loadTickets()}
+		if m.state == splitView && m.showDetail && msg.ticketID > 0 {
+			m.detail = newDetailModel(m.tickets)
+			m.detail.expectedID = msg.ticketID
+			m.detail.width = m.detailPanelWidth()
+			m.detail.height = m.height
+			cmds = append(cmds, m.detail.spinner.Tick, m.detail.loadTicket(msg.ticketID), m.detail.loadAudits(msg.ticketID))
+		}
+		return m, tea.Batch(cmds...)
+
+	case inlineFieldErrMsg:
+		m.operator.fieldEdit.submitting = false
+		m.operator.fieldEdit.err = msg.err
 		return m, nil
 
 	case operatorTickMsg:
@@ -1542,9 +1580,7 @@ func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 		if !ok || !row.Editable {
 			return m, nil
 		}
-		var cmd tea.Cmd
-		m.actions, cmd = m.actions.openField(region.TicketID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
-		return m, cmd
+		return m.openInlineFieldEdit(row)
 	case hitAssetsFolder, hitAssetFile:
 		if region.Action == hitAssetsFolder && region.Path == "" && region.TicketID > 0 {
 			region.Path = m.ticketWorkDir(region.TicketID)
@@ -1714,6 +1750,66 @@ func (m App) handleMouseCommand(command string) (tea.Model, tea.Cmd) {
 		return m.openFirstEditableField()
 	}
 	return m, nil
+}
+
+func (m App) openInlineFieldEdit(row operatorFieldRow) (App, tea.Cmd) {
+	if m.operator.ticket == nil {
+		return m, nil
+	}
+	m.focus = focusOperator
+	cmd := m.operator.openFieldEdit(m.operator.ticket.ID, row)
+	return m, cmd
+}
+
+func (m App) handleInlineFieldKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if m.operator.fieldEdit.submitting {
+		return m, nil
+	}
+	switch {
+	case key.Matches(msg, keys.Back):
+		m.operator.cancelFieldEdit()
+		return m, nil
+	case key.Matches(msg, keys.Submit):
+		if strings.TrimSpace(m.operator.fieldEdit.input.Value()) == "" && !m.operator.fieldEdit.clearArmed {
+			m.operator.fieldEdit.clearArmed = true
+			m.operator.fieldEdit.err = fmt.Errorf("field will be cleared; press ctrl+s again to confirm")
+			return m, nil
+		}
+		m.operator.fieldEdit.submitting = true
+		m.operator.fieldEdit.err = nil
+		return m, m.submitInlineFieldEdit()
+	default:
+		var cmd tea.Cmd
+		m.operator.fieldEdit.input, cmd = m.operator.fieldEdit.input.Update(msg)
+		if strings.TrimSpace(m.operator.fieldEdit.input.Value()) != "" {
+			m.operator.fieldEdit.clearArmed = false
+		}
+		return m, cmd
+	}
+}
+
+func (m App) submitInlineFieldEdit() tea.Cmd {
+	edit := m.operator.fieldEdit
+	ticketID := edit.ticketID
+	fieldID := edit.fieldID
+	valueText := strings.TrimSpace(edit.input.Value())
+	value, parseErr := parseTicketFieldValue(edit.fieldType, valueText)
+	tickets := m.tickets
+	return func() tea.Msg {
+		if parseErr != nil {
+			return inlineFieldErrMsg{err: parseErr}
+		}
+		if tickets == nil {
+			return inlineFieldErrMsg{err: fmt.Errorf("ticket service unavailable")}
+		}
+		ticket, err := tickets.Update(context.Background(), ticketID, &types.UpdateTicketRequest{
+			CustomFields: []types.CustomField{{ID: fieldID, Value: value}},
+		})
+		if err != nil {
+			return inlineFieldErrMsg{err: err}
+		}
+		return inlineFieldUpdatedMsg{ticketID: ticketID, ticket: ticket}
+	}
 }
 
 func (m App) selectQueueIndex(index int) (tea.Model, tea.Cmd) {

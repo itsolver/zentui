@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/itsolver/zentui/internal/triage"
@@ -30,6 +31,7 @@ type operatorModel struct {
 	analysis    map[string]triage.ImageAnalysis
 	timer       triage.TicketTimer
 	timerPaused bool
+	fieldEdit   operatorFieldEdit
 }
 
 type operatorFieldRow struct {
@@ -41,6 +43,18 @@ type operatorFieldRow struct {
 	ReadOnly string
 }
 
+type operatorFieldEdit struct {
+	active     bool
+	ticketID   int64
+	fieldID    int64
+	label      string
+	fieldType  string
+	input      textarea.Model
+	err        error
+	submitting bool
+	clearArmed bool
+}
+
 func newOperatorModel() operatorModel {
 	return operatorModel{
 		users:       map[int64]types.User{},
@@ -48,7 +62,16 @@ func newOperatorModel() operatorModel {
 		fieldLabels: map[int64]string{},
 		fieldMeta:   map[int64]types.TicketField{},
 		analysis:    map[string]triage.ImageAnalysis{},
+		fieldEdit:   newOperatorFieldEdit(),
 	}
+}
+
+func newOperatorFieldEdit() operatorFieldEdit {
+	input := textarea.New()
+	input.Placeholder = "Field value"
+	input.ShowLineNumbers = false
+	input.SetHeight(1)
+	return operatorFieldEdit{input: input}
 }
 
 func operatorTick() tea.Cmd {
@@ -66,6 +89,9 @@ func (m *operatorModel) focusTicketID(ticketID int64) {
 }
 
 func (m *operatorModel) setTicket(ticket types.Ticket, users []types.User, orgs []types.Organization, imageCount int) {
+	if m.ticket == nil || m.ticket.ID != ticket.ID {
+		m.cancelFieldEdit()
+	}
 	m.ticket = &ticket
 	m.users = make(map[int64]types.User, len(users))
 	for _, user := range users {
@@ -119,6 +145,34 @@ func (m *operatorModel) resetTimer() {
 
 func (m operatorModel) elapsedSeconds() int {
 	return m.timer.ElapsedSeconds(time.Now())
+}
+
+func (m operatorModel) fieldEditActive() bool {
+	return m.fieldEdit.active
+}
+
+func (m *operatorModel) openFieldEdit(ticketID int64, row operatorFieldRow) tea.Cmd {
+	m.fieldEdit.active = true
+	m.fieldEdit.ticketID = ticketID
+	m.fieldEdit.fieldID = row.Field.ID
+	m.fieldEdit.label = row.Label
+	m.fieldEdit.fieldType = row.Meta.Type
+	m.fieldEdit.err = nil
+	m.fieldEdit.submitting = false
+	m.fieldEdit.clearArmed = false
+	m.fieldEdit.input.Reset()
+	m.fieldEdit.input.SetHeight(1)
+	m.fieldEdit.input.Placeholder = "Field value"
+	m.fieldEdit.input.SetValue(row.Value)
+	return m.fieldEdit.input.Focus()
+}
+
+func (m *operatorModel) cancelFieldEdit() {
+	m.fieldEdit.active = false
+	m.fieldEdit.err = nil
+	m.fieldEdit.submitting = false
+	m.fieldEdit.clearArmed = false
+	m.fieldEdit.input.Blur()
 }
 
 func (m operatorModel) View() string {
@@ -176,6 +230,10 @@ func (m operatorModel) View() string {
 	if len(m.ticket.CustomFields) > 0 {
 		b.WriteString(headerStyle.Render("Fields") + "\n")
 		for _, row := range m.fieldRows() {
+			if m.fieldEdit.active && m.fieldEdit.ticketID == m.ticket.ID && m.fieldEdit.fieldID == row.Field.ID {
+				b.WriteString(m.renderInlineFieldEdit(row))
+				continue
+			}
 			value := row.Value
 			if !row.Editable && row.ReadOnly != "" {
 				value += " (" + row.ReadOnly + ")"
@@ -332,7 +390,11 @@ func (m operatorModel) hitRegions(originX, originY, width int, assetsFolder stri
 				Disabled: !row.Editable,
 				Reason:   row.ReadOnly,
 			})
-			y++
+			if m.fieldEdit.active && m.fieldEdit.ticketID == m.ticket.ID && m.fieldEdit.fieldID == row.Field.ID {
+				y += m.inlineFieldEditHeight()
+			} else {
+				y++
+			}
 		}
 	}
 	return regions
@@ -351,6 +413,30 @@ func (m operatorModel) renderLine(label, value string) string {
 		value = string(runes[:width-1]) + "…"
 	}
 	return labelStyle.Render(label+":") + " " + valueStyle.Render(value) + "\n"
+}
+
+func (m operatorModel) renderInlineFieldEdit(row operatorFieldRow) string {
+	width := m.width - 2
+	if width < 12 {
+		width = 12
+	}
+	edit := m.fieldEdit
+	edit.input.SetWidth(width)
+
+	status := dimStyle.Render("ctrl+s update   esc cancel")
+	if edit.submitting {
+		status = dimStyle.Render("Updating field...")
+	} else if edit.err != nil {
+		status = errorStyle.Render("Error: " + edit.err.Error())
+	}
+
+	return labelStyle.Render(row.Label+":") + "\n" +
+		edit.input.View() + "\n" +
+		status + "\n"
+}
+
+func (m operatorModel) inlineFieldEditHeight() int {
+	return 3
 }
 
 func formatElapsed(seconds int) string {

@@ -68,17 +68,19 @@ func TestMouseClickLastQueueRowUsesListCursorSideEffects(t *testing.T) {
 	assert.True(t, updated.list.loadingMore)
 }
 
-func TestMouseClickFieldOpensEditModalWithCurrentValue(t *testing.T) {
+func TestMouseClickFieldStartsInlineEditWithCurrentValue(t *testing.T) {
 	app := mouseTestApp(t)
 	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
 
 	model, cmd := app.Update(tea.MouseClickMsg(tea.Mouse{X: fieldRegion.X1, Y: fieldRegion.Y1, Button: tea.MouseLeft}))
 	updated := model.(App)
 
-	assert.Equal(t, actionField, updated.actions.mode)
-	assert.Equal(t, int64(99), updated.actions.fieldID)
-	assert.Equal(t, "Support Plan", updated.actions.fieldLabel)
-	assert.Equal(t, "Managed", updated.actions.textarea.Value())
+	assert.Equal(t, actionNone, updated.actions.mode)
+	assert.True(t, updated.operator.fieldEdit.active)
+	assert.Equal(t, focusOperator, updated.focus)
+	assert.Equal(t, int64(99), updated.operator.fieldEdit.fieldID)
+	assert.Equal(t, "Support Plan", updated.operator.fieldEdit.label)
+	assert.Equal(t, "Managed", updated.operator.fieldEdit.input.Value())
 	assert.NotNil(t, cmd)
 }
 
@@ -92,6 +94,54 @@ func TestCommandBarFieldDoesNotUseStaleOperatorTicket(t *testing.T) {
 
 	assert.Nil(t, cmd)
 	assert.Equal(t, actionNone, updated.actions.mode)
+	assert.False(t, updated.operator.fieldEdit.active)
+}
+
+func TestSubmitInlineFieldEditWritesOnlySelectedCustomField(t *testing.T) {
+	svc := &mouseTicketService{}
+	app := mouseTestAppWithService(t, svc)
+	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
+	model, _ := app.Update(tea.MouseClickMsg(tea.Mouse{X: fieldRegion.X1, Y: fieldRegion.Y1, Button: tea.MouseLeft}))
+	app = model.(App)
+	app.operator.fieldEdit.input.SetValue("Ad hoc")
+
+	model, cmd := app.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	app = model.(App)
+	require.NotNil(t, cmd)
+	require.True(t, app.operator.fieldEdit.submitting)
+
+	model, _ = app.Update(cmd())
+	updated := model.(App)
+
+	require.NotNil(t, svc.lastUpdate)
+	require.Len(t, svc.lastUpdate.CustomFields, 1)
+	assert.Equal(t, int64(99), svc.lastUpdate.CustomFields[0].ID)
+	assert.Equal(t, "Ad hoc", svc.lastUpdate.CustomFields[0].Value)
+	assert.Nil(t, svc.lastUpdate.Comment)
+	assert.Empty(t, svc.lastUpdate.Status)
+	assert.False(t, updated.operator.fieldEdit.active)
+}
+
+func TestInvalidInlineFieldUpdateKeepsEditOpenWithTypedValue(t *testing.T) {
+	svc := &mouseTicketService{updateErr: errors.New("invalid custom field")}
+	app := mouseTestAppWithService(t, svc)
+	fieldRegion := requireRegion(t, app.hitRegions(), hitFieldEdit)
+	model, _ := app.Update(tea.MouseClickMsg(tea.Mouse{X: fieldRegion.X1, Y: fieldRegion.Y1, Button: tea.MouseLeft}))
+	app = model.(App)
+	app.operator.fieldEdit.input.SetValue("Bad value")
+
+	model, cmd := app.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	app = model.(App)
+	require.NotNil(t, cmd)
+
+	model, _ = app.Update(cmd())
+	updated := model.(App)
+
+	assert.True(t, updated.operator.fieldEdit.active)
+	assert.False(t, updated.operator.fieldEdit.submitting)
+	assert.Equal(t, "Bad value", updated.operator.fieldEdit.input.Value())
+	require.NotNil(t, updated.operator.fieldEdit.err)
+	assert.Contains(t, updated.operator.fieldEdit.err.Error(), "invalid custom field")
 }
 
 func TestSubmitFieldEditWritesOnlySelectedCustomField(t *testing.T) {
@@ -327,7 +377,11 @@ func requirePaletteActionRegion(t *testing.T, app App, action string) hitRegion 
 
 func mouseTestApp(t *testing.T) App {
 	t.Helper()
-	svc := &mouseTicketService{}
+	return mouseTestAppWithService(t, &mouseTicketService{})
+}
+
+func mouseTestAppWithService(t *testing.T, svc *mouseTicketService) App {
+	t.Helper()
 	app := NewAppWithOptions(svc, nil, nil, "example", "test", AppOptions{WorkDir: t.TempDir()})
 	app.width = 160
 	app.height = 40
