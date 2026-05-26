@@ -331,10 +331,14 @@ func (m actionsModel) submitMerge() tea.Cmd {
 		if err != nil {
 			return actionErrMsg{err: err}
 		}
+		sourceCommentPublic := false
+		targetCommentPublic := true
 		result, err := tickets.MergeTickets(ctx, targetID, &types.MergeTicketsRequest{
-			IDs:           []int64{sourceID},
-			SourceComment: fmt.Sprintf("Closing as merged into #%d.", targetID),
-			TargetComment: fmt.Sprintf("Merging duplicate/follow-up ticket #%d.", sourceID),
+			IDs:                   []int64{sourceID},
+			SourceComment:         triage.BuildMergeSourceComment(targetID),
+			SourceCommentIsPublic: &sourceCommentPublic,
+			TargetComment:         triage.BuildMergeTargetPublicComment(sourceID, targetID),
+			TargetCommentIsPublic: &targetCommentPublic,
 		})
 		if err != nil {
 			return actionErrMsg{err: err}
@@ -823,8 +827,9 @@ func (m actionsModel) viewMerge() string {
 		preview.WriteString(labelStyle.Render("Source status:") + " " + valueStyle.Render(m.mergeSourceStatus) + "\n")
 		preview.WriteString(labelStyle.Render("Target status:") + " " + valueStyle.Render(m.mergeTargetStatus) + "\n")
 		preview.WriteString(labelStyle.Render("Target subject:") + " " + valueStyle.Render(m.mergeTargetSubject) + "\n")
-		preview.WriteString(labelStyle.Render("Source comment:") + " " + valueStyle.Render(fmt.Sprintf("Closing as merged into #%s.", strings.TrimSpace(m.textarea.Value()))) + "\n")
-		preview.WriteString(labelStyle.Render("Target comment:") + " " + valueStyle.Render(fmt.Sprintf("Merging duplicate/follow-up ticket #%d.", m.sourceTicketID)) + "\n")
+		targetText := strings.TrimSpace(m.textarea.Value())
+		preview.WriteString(labelStyle.Render("Source note:") + " " + valueStyle.Render(fmt.Sprintf("Merged into ticket #%s by support.", targetText)) + "\n")
+		preview.WriteString(labelStyle.Render("Public target note:") + " " + valueStyle.Render(fmt.Sprintf("We've merged request #%d into this existing request #%s so we can keep the related conversation and work together in one place.", m.sourceTicketID, targetText)) + "\n")
 		cleanup := "unavailable"
 		if m.mergeCleanupPlan.Eligible {
 			if m.mergeCleanupEnabled {
