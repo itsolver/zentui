@@ -45,3 +45,5 @@ For Codex cloud app/bot reviews, do not rely on `gh pr view --json reviews` alon
 ## Agent-Specific Instructions
 
 Make surgical changes. Match existing patterns, avoid speculative refactors, and keep user-facing CLI contracts stable unless the task explicitly changes them.
+
+After CLI or TUI code changes, always rebuild the local binary with `go build -o zentui` before asking the user to retry `./zentui`.
