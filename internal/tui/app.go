@@ -100,6 +100,7 @@ type App struct {
 	version     string
 	cursorSeq   uint64
 	openPath    func(string)
+	notice      string
 }
 
 type AppOptions struct {
@@ -493,13 +494,14 @@ func (m App) openAssetsFolderForActiveTicket() (App, tea.Cmd) {
 }
 
 func (m App) openFirstEditableField() (App, tea.Cmd) {
-	if m.operator.ticket == nil {
+	ticket, ok := m.activeTicket()
+	if !ok || m.operator.ticket == nil || m.operator.ticket.ID != ticket.ID {
 		return m, nil
 	}
 	for _, row := range m.operator.fieldRows() {
 		if row.Editable {
 			var cmd tea.Cmd
-			m.actions, cmd = m.actions.openField(m.operator.ticket.ID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
+			m.actions, cmd = m.actions.openField(ticket.ID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
 			return m, cmd
 		}
 	}
@@ -1077,6 +1079,9 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.detail, cmd = m.detail.Update(msg)
 				return m, cmd
 			}
+			if m.focus == focusOperator {
+				return m, nil
+			}
 			// focusList: route to list
 			var cmd tea.Cmd
 			m.list, cmd = m.list.Update(msg)
@@ -1510,7 +1515,7 @@ func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 	}
 	if region.Disabled {
 		if region.Reason != "" {
-			m.mergeErr = fmt.Errorf("%s", region.Reason)
+			m.notice = region.Reason
 		}
 		return m, nil
 	}
@@ -1535,6 +1540,9 @@ func (m App) handleMouseClick(x, y int) (tea.Model, tea.Cmd) {
 		m.actions, cmd = m.actions.openField(region.TicketID, row.Field.ID, row.Label, row.Value, row.Meta.Type)
 		return m, cmd
 	case hitAssetsFolder, hitAssetFile:
+		if region.Action == hitAssetsFolder && region.Path == "" && region.TicketID > 0 {
+			region.Path = m.ticketWorkDir(region.TicketID)
+		}
 		if region.Path != "" && m.openPath != nil {
 			m.openPath(region.Path)
 		}
@@ -1649,6 +1657,11 @@ func (m App) handlePaletteMouseClick(x, y int) (tea.Model, tea.Cmd) {
 		return m.forwardPaletteKey(tea.KeyUp)
 	case hitActionDown:
 		return m.forwardPaletteKey(tea.KeyDown)
+	case hitActionOption:
+		if region.TicketIndex >= 0 && region.TicketIndex < len(m.cmdPalette.filtered) {
+			m.cmdPalette.cursor = region.TicketIndex
+			return m.forwardPaletteKey(tea.KeyEnter)
+		}
 	}
 	return m, nil
 }
@@ -1702,7 +1715,8 @@ func (m App) selectQueueIndex(index int) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.focus = focusList
-	m.list.cursor = index
+	var cursorCmd tea.Cmd
+	m.list, cursorCmd = m.list.setCursor(index)
 	ticketID := m.list.items[index].ID
 	delete(m.list.newTicketIDs, ticketID)
 	m.operator.focusTicketID(ticketID)
@@ -1719,16 +1733,16 @@ func (m App) selectQueueIndex(index int) (tea.Model, tea.Cmd) {
 		m.detail.expectedID = ticketID
 		m.detail.width = m.detailPanelWidth()
 		m.detail.height = m.height
-		return m, tea.Batch(m.detail.spinner.Tick, m.detail.loadTicket(ticketID), m.detail.loadAudits(ticketID))
+		return m, tea.Batch(cursorCmd, m.detail.spinner.Tick, m.detail.loadTicket(ticketID), m.detail.loadAudits(ticketID))
 	}
 	if m.state == detailView {
 		m.detail = newDetailModel(m.tickets)
 		m.detail.expectedID = ticketID
 		m.detail.width = m.width
 		m.detail.height = m.height
-		return m, tea.Batch(m.detail.spinner.Tick, m.detail.loadTicket(ticketID), m.detail.loadAudits(ticketID))
+		return m, tea.Batch(cursorCmd, m.detail.spinner.Tick, m.detail.loadTicket(ticketID), m.detail.loadAudits(ticketID))
 	}
-	return m, nil
+	return m, cursorCmd
 }
 
 func (m App) paneHitRegions() []hitRegion {
@@ -1787,11 +1801,7 @@ func (m App) hitRegions() []hitRegion {
 		listWidth := m.listPanelWidth()
 		detailWidth := m.detailPanelWidth()
 		operatorX := contentX + listWidth + detailWidth + 2
-		assetsFolder := ""
-		if m.operator.ticket != nil {
-			assetsFolder = m.ticketWorkDir(m.operator.ticket.ID)
-		}
-		regions = append(regions, m.operator.hitRegions(operatorX, contentY, m.operatorPanelWidth(), assetsFolder)...)
+		regions = append(regions, m.operator.hitRegions(operatorX, contentY, m.operatorPanelWidth(), "")...)
 	}
 	regions = append(regions, m.commandHitRegions()...)
 	return regions
@@ -1839,14 +1849,7 @@ func (m App) actionHitRegions() []hitRegion {
 		return nil
 	}
 	if m.cmdPalette.active {
-		midX := m.width / 2
-		midY := m.height / 2
-		return []hitRegion{
-			{Action: hitActionCancel, X1: midX + 38, Y1: midY - 12, X2: midX + 42, Y2: midY - 10},
-			{Action: hitActionSubmit, X1: midX - 42, Y1: midY - 6, X2: midX + 42, Y2: midY + 15},
-			{Action: hitActionUp, X1: midX - 42, Y1: midY - 6, X2: midX + 42, Y2: midY - 1},
-			{Action: hitActionDown, X1: midX - 42, Y1: midY + 1, X2: midX + 42, Y2: midY + 15},
-		}
+		return m.commandPaletteHitRegions()
 	}
 	specs := m.actions.buttonSpecs()
 	if len(specs) == 0 {
@@ -1879,6 +1882,45 @@ func (m App) actionHitRegions() []hitRegion {
 		x += len(label) + 2
 	}
 	regions = append(regions, m.actionOptionHitRegions()...)
+	return regions
+}
+
+func (m App) commandPaletteHitRegions() []hitRegion {
+	overlay := m.cmdPalette.View()
+	overlayWidth := lipgloss.Width(overlay)
+	overlayHeight := lipgloss.Height(overlay)
+	left := (m.width - overlayWidth) / 2
+	top := (m.height - overlayHeight) / 2
+	if left < 0 {
+		left = 0
+	}
+	if top < 0 {
+		top = 0
+	}
+	regions := []hitRegion{
+		{Action: hitActionCancel, X1: left + overlayWidth - 8, Y1: top, X2: left + overlayWidth - 2, Y2: top + 2},
+	}
+
+	y := top + 5
+	lastCategory := ""
+	for i, item := range m.cmdPalette.filtered {
+		if item.category != lastCategory {
+			if lastCategory != "" {
+				y++
+			}
+			lastCategory = item.category
+			y++
+		}
+		regions = append(regions, hitRegion{
+			Action:      hitActionOption,
+			X1:          left + 2,
+			Y1:          y,
+			X2:          left + overlayWidth - 3,
+			Y2:          y,
+			TicketIndex: i,
+		})
+		y++
+	}
 	return regions
 }
 
@@ -2086,6 +2128,9 @@ func (m App) helpBar() string {
 		left = "Ranking merge targets with codex exec...  " + left
 	} else if m.mergeErr != nil {
 		left = errorStyle.Render("Merge error: "+m.mergeErr.Error()) + "  " + left
+	}
+	if m.notice != "" {
+		left = dimStyle.Render("Notice: "+m.notice) + "  " + left
 	}
 	mouseActions := "open  field  assets  draft  merge  refresh  more  pause  reset  commands"
 	if left != "" {

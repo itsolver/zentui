@@ -243,7 +243,7 @@ func skipOperatorField(label string) bool {
 
 func isEditableTicketField(fieldType string) bool {
 	switch fieldType {
-	case "", "text", "textarea", "regexp", "integer", "decimal":
+	case "text", "textarea", "regexp", "integer", "decimal":
 		return true
 	default:
 		return false
@@ -279,12 +279,13 @@ func (m operatorModel) hitRegions(originX, originY, width int, assetsFolder stri
 	}
 
 	regions = append(regions, hitRegion{
-		Action: hitAssetsFolder,
-		X1:     originX,
-		Y1:     y,
-		X2:     x2,
-		Y2:     y + 1,
-		Path:   assetsFolder,
+		Action:   hitAssetsFolder,
+		X1:       originX,
+		Y1:       y,
+		X2:       x2,
+		Y2:       y + 1,
+		TicketID: m.ticket.ID,
+		Path:     assetsFolder,
 	})
 	y += 2 // Assets header + Images line
 	for i, asset := range m.assets {

@@ -428,11 +428,12 @@ func (m listModel) setCursor(index int) (listModel, tea.Cmd) {
 	if index < 0 || index >= len(m.items) || m.loading {
 		return m, nil
 	}
-	if m.cursor == index {
-		return m, nil
-	}
+	changed := m.cursor != index
 	m.cursor = index
-	cmds := []tea.Cmd{m.emitCursorChanged()}
+	var cmds []tea.Cmd
+	if changed {
+		cmds = append(cmds, m.emitCursorChanged())
+	}
 	if m.cursor == len(m.items)-1 && m.hasMore && !m.loadingMore {
 		m.loadingMore = true
 		cmds = append(cmds, m.spinner.Tick, m.triggerLoadMore())
