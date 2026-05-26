@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/spinner"
@@ -59,6 +60,7 @@ type actionsModel struct {
 	suggestedStatus     string
 	elapsedSeconds      int
 	existingTotal       int
+	updatedStamp        string
 	reasoningSummary    string
 	sourceTicketID      int64
 	mergeSuggestions    []triage.MergeSuggestion
@@ -113,7 +115,7 @@ func (m actionsModel) openComment(ticketID int64, perms permissions.Permissions)
 	return m, m.textarea.Focus()
 }
 
-func (m actionsModel) openApproval(ticketID int64, perms permissions.Permissions, body string, suggestedStatus string, currentStatus string, elapsedSeconds int, existingTotal int, reasoningSummary string) (actionsModel, tea.Cmd) {
+func (m actionsModel) openApproval(ticketID int64, perms permissions.Permissions, body string, suggestedStatus string, currentStatus string, elapsedSeconds int, existingTotal int, updatedAt time.Time, reasoningSummary string) (actionsModel, tea.Cmd) {
 	m.ticketID = ticketID
 	m.mode = actionApproval
 	m.perms = perms
@@ -128,6 +130,7 @@ func (m actionsModel) openApproval(ticketID int64, perms permissions.Permissions
 	m.suggestedStatus = suggestedStatus
 	m.elapsedSeconds = elapsedSeconds
 	m.existingTotal = existingTotal
+	m.updatedStamp = formatUpdatedStamp(updatedAt)
 	m.reasoningSummary = reasoningSummary
 	m.statusIdx = 0
 	defaultStatus := suggestedStatus
@@ -240,6 +243,7 @@ func (m actionsModel) submitApproval() tea.Cmd {
 	tickets := m.tickets
 	elapsed := m.elapsedSeconds
 	existingTotal := m.existingTotal
+	updatedStamp := m.updatedStamp
 	return func() tea.Msg {
 		req := triage.BuildApprovalUpdate(triage.ApprovalInput{
 			Body:                 body,
@@ -247,6 +251,7 @@ func (m actionsModel) submitApproval() tea.Cmd {
 			ConfirmedStatus:      status,
 			ElapsedSeconds:       elapsed,
 			ExistingTotalSeconds: existingTotal,
+			UpdatedStamp:         updatedStamp,
 		})
 		ticket, err := tickets.Update(context.Background(), ticketID, req)
 		if err != nil {
@@ -254,6 +259,13 @@ func (m actionsModel) submitApproval() tea.Cmd {
 		}
 		return ticketUpdatedMsg{ticket: ticket}
 	}
+}
+
+func formatUpdatedStamp(updatedAt time.Time) string {
+	if updatedAt.IsZero() {
+		return ""
+	}
+	return updatedAt.UTC().Format(time.RFC3339)
 }
 
 func (m actionsModel) submitMerge() tea.Cmd {

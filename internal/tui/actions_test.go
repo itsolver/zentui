@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/itsolver/zentui/internal/permissions"
 	"github.com/itsolver/zentui/internal/types"
 )
 
@@ -25,6 +27,26 @@ func TestSubmitMergeRunsRequesterCleanupAfterTicketMerge(t *testing.T) {
 	_, ok := msg.(ticketUpdatedMsg)
 	require.True(t, ok, "expected ticketUpdatedMsg, got %T", msg)
 	assert.Equal(t, []string{"ticket_merge", "user_merge", "identity_create"}, calls)
+}
+
+func TestApprovalSubmitIncludesUpdatedStampForSafeUpdate(t *testing.T) {
+	tickets := &mergeOrderTicketService{}
+	model := newActionsModel(tickets, nil)
+	updatedAt := time.Date(2026, 5, 26, 1, 23, 45, 0, time.FixedZone("AEST", 10*60*60))
+	model, _ = model.openApproval(123, permissions.Permissions{CanPublicComment: true}, "Internal note", "pending", "open", 58, 100, updatedAt, "reason")
+	model.isPublic = false
+	model.statusIdx = 1
+
+	msg := model.submitApproval()()
+
+	_, ok := msg.(ticketUpdatedMsg)
+	require.True(t, ok, "expected ticketUpdatedMsg, got %T", msg)
+	require.NotNil(t, tickets.updateReq)
+	assert.True(t, tickets.updateReq.SafeUpdate)
+	assert.Equal(t, "2026-05-25T15:23:45Z", tickets.updateReq.UpdatedStamp)
+	require.NotNil(t, tickets.updateReq.Comment)
+	require.NotNil(t, tickets.updateReq.Comment.Public)
+	assert.False(t, *tickets.updateReq.Comment.Public)
 }
 
 func TestSubmitMergeReturnsTicketUpdateWhenRequesterCleanupFails(t *testing.T) {
@@ -47,7 +69,8 @@ func TestSubmitMergeReturnsTicketUpdateWhenRequesterCleanupFails(t *testing.T) {
 }
 
 type mergeOrderTicketService struct {
-	calls *[]string
+	calls     *[]string
+	updateReq *types.UpdateTicketRequest
 }
 
 func (s *mergeOrderTicketService) List(context.Context, *types.ListTicketsOptions) (*types.TicketPage, error) {
@@ -87,8 +110,10 @@ func (s *mergeOrderTicketService) Create(context.Context, *types.CreateTicketReq
 	return nil, nil
 }
 
-func (s *mergeOrderTicketService) Update(context.Context, int64, *types.UpdateTicketRequest) (*types.Ticket, error) {
-	return nil, nil
+func (s *mergeOrderTicketService) Update(_ context.Context, _ int64, req *types.UpdateTicketRequest) (*types.Ticket, error) {
+	s.updateReq = &types.UpdateTicketRequest{}
+	*s.updateReq = *req
+	return &types.Ticket{ID: 123, Status: req.Status}, nil
 }
 
 func (s *mergeOrderTicketService) Delete(context.Context, int64) error {

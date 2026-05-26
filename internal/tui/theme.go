@@ -205,6 +205,18 @@ func styledStatus(status string) string {
 	return lipgloss.NewStyle().Foreground(color).Render(icon + " " + status)
 }
 
+func styledStatusIcon(status string) string {
+	color, ok := statusColors[status]
+	if !ok {
+		return dimStyle.Render("?")
+	}
+	icon, ok := statusIcons[status]
+	if !ok {
+		icon = "?"
+	}
+	return lipgloss.NewStyle().Foreground(color).Render(icon)
+}
+
 func styledPriority(priority string) string {
 	if priority == "" {
 		return dimStyle.Render("- none")
@@ -218,4 +230,19 @@ func styledPriority(priority string) string {
 		icon = "■"
 	}
 	return lipgloss.NewStyle().Foreground(color).Render(icon + " " + priority)
+}
+
+func styledPriorityIcon(priority string) string {
+	if priority == "" {
+		return dimStyle.Render("-")
+	}
+	color, ok := priorityColors[priority]
+	if !ok {
+		color = priorityColors["normal"]
+	}
+	icon, ok := priorityIcons[priority]
+	if !ok {
+		icon = "■"
+	}
+	return lipgloss.NewStyle().Foreground(color).Render(icon)
 }
